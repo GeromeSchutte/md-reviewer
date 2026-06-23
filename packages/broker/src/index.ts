@@ -46,4 +46,4 @@ function main(): void {
   process.on("SIGTERM", shutdown);
 }
 
-main();
+if (import.meta.main) main();

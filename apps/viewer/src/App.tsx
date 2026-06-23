@@ -1,10 +1,24 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Anchor, FeedbackRecord, LifecycleState, QuestionRecord, ReworkResult } from "@plan-review/shared";
 import { MarkdownView } from "./components/MarkdownView";
 import type { CapturedSelection } from "./selection";
 import { resolveSession } from "./launch";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 import {
   askQuestion,
   endSession,
@@ -21,13 +35,14 @@ interface ComposerState {
   anchor: Anchor | null;
 }
 
+// Token-based status chips. `cls` overrides the outline Badge's color via tailwind-merge.
 const STATE_META: Record<LifecycleState, { label: string; cls: string; busy?: boolean }> = {
-  "no-agent": { label: "No agent", cls: "bg-gray-200 text-gray-700" },
-  "waiting-for-review": { label: "Ready", cls: "bg-green-100 text-green-800" },
-  "agent-thinking": { label: "Answering…", cls: "bg-blue-100 text-blue-800", busy: true },
-  reworking: { label: "Reworking…", cls: "bg-amber-100 text-amber-800", busy: true },
-  finalized: { label: "Finalized", cls: "bg-gray-200 text-gray-700" },
-  "agent-disconnected": { label: "Agent offline", cls: "bg-red-100 text-red-800" },
+  "no-agent": { label: "No agent", cls: "border-transparent bg-muted text-muted-foreground" },
+  "waiting-for-review": { label: "Ready", cls: "border-success/30 bg-success/15 text-success" },
+  "agent-thinking": { label: "Answering…", cls: "border-info/30 bg-info/15 text-info", busy: true },
+  reworking: { label: "Reworking…", cls: "border-warning/30 bg-warning/15 text-warning", busy: true },
+  finalized: { label: "Finalized", cls: "border-transparent bg-muted text-muted-foreground" },
+  "agent-disconnected": { label: "Agent offline", cls: "border-destructive/40 bg-destructive/15 text-destructive" },
 };
 
 function anchorLabel(a: Anchor | null): string {
@@ -154,21 +169,21 @@ export default function App() {
   if (!sid) return <Centered>Connecting…</Centered>;
 
   return (
-    <div className="flex h-full flex-col bg-white text-gray-900">
+    <div className="flex h-full flex-col bg-background text-foreground">
       {/* header */}
-      <header className="flex items-center gap-3 border-b border-gray-200 px-4 py-2">
+      <header className="flex items-center gap-3 border-b border-border px-4 py-2">
         <span className="font-semibold">Plan Review</span>
-        <span className={`rounded px-2 py-0.5 text-xs font-medium ${meta.cls}`}>
+        <Badge variant="outline" className={cn("gap-1 font-medium", meta.cls)}>
           {meta.busy && <Spinner />} {meta.label}
-        </span>
-        {!connected && <span className="text-xs text-red-600">disconnected</span>}
+        </Badge>
+        {!connected && <span className="text-xs text-destructive">disconnected</span>}
         <div className="ml-auto flex gap-2">
-          <button className="btn" onClick={() => openComposer("ask", null)}>
+          <Button variant="outline" size="sm" onClick={() => openComposer("ask", null)}>
             Ask (general)
-          </button>
-          <button className="btn" onClick={() => openComposer("feedback", null)}>
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => openComposer("feedback", null)}>
             Comment (general)
-          </button>
+          </Button>
         </div>
       </header>
 
@@ -179,59 +194,66 @@ export default function App() {
         </main>
 
         {/* sidebar */}
-        <aside className="flex w-[380px] flex-col border-l border-gray-200">
-          <div className="flex border-b border-gray-200 text-sm">
-            <TabButton active={tab === "review"} onClick={() => setTab("review")}>
-              Review ({queuedFeedback.length})
-            </TabButton>
-            <TabButton active={tab === "qa"} onClick={() => setTab("qa")}>
-              Q&A ({questions.length})
-            </TabButton>
-          </div>
-          <div className="min-h-0 flex-1 overflow-auto p-3">
-            {tab === "qa" ? (
-              <QAList sid={sid} questions={questions} />
-            ) : (
-              <ReviewList sid={sid} feedback={feedback} />
-            )}
-          </div>
-          {tab === "review" && (
-            <ReviewBar
-              sid={sid}
-              state={state}
-              reworkResult={reworkResult}
-              reviewNote={reviewNote}
-              setReviewNote={setReviewNote}
-              count={queuedFeedback.length}
-            />
-          )}
+        <aside className="flex w-[380px] flex-col border-l border-border">
+          <Tabs
+            value={tab}
+            onValueChange={(v) => setTab(v as Tab)}
+            className="flex min-h-0 flex-1 flex-col gap-0"
+          >
+            <div className="border-b border-border p-2">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="review">Review {queuedFeedback.length > 0 && `(${queuedFeedback.length})`}</TabsTrigger>
+                <TabsTrigger value="qa">Q&A {questions.length > 0 && `(${questions.length})`}</TabsTrigger>
+              </TabsList>
+            </div>
+            <TabsContent value="review" className="flex min-h-0 flex-col">
+              <div className="min-h-0 flex-1 overflow-auto p-3">
+                <ReviewList sid={sid} feedback={feedback} />
+              </div>
+              <ReviewBar
+                sid={sid}
+                state={state}
+                reworkResult={reworkResult}
+                reviewNote={reviewNote}
+                setReviewNote={setReviewNote}
+                count={queuedFeedback.length}
+              />
+            </TabsContent>
+            <TabsContent value="qa" className="min-h-0">
+              <div className="h-full overflow-auto p-3">
+                <QAList sid={sid} questions={questions} />
+              </div>
+            </TabsContent>
+          </Tabs>
         </aside>
       </div>
 
       {/* floating selection toolbar */}
       {selection && !composer && (
         <div
-          className="fixed z-20 flex gap-1 rounded-md border border-gray-300 bg-white p-1 shadow-lg"
+          className="fixed z-20 flex items-center gap-1 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-lg"
           style={{ top: selection.rect.bottom + 6, left: selection.rect.left }}
         >
-          <span className="px-1 py-0.5 text-xs text-gray-500">{anchorLabel(selection.anchor)}</span>
-          <button className="btn" onClick={() => openComposer("ask", selection.anchor)}>
+          <span className="px-1 py-0.5 text-xs text-muted-foreground">{anchorLabel(selection.anchor)}</span>
+          <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => openComposer("ask", selection.anchor)}>
             Ask
-          </button>
-          <button className="btn" onClick={() => openComposer("feedback", selection.anchor)}>
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2"
+            onClick={() => openComposer("feedback", selection.anchor)}
+          >
             Comment
-          </button>
+          </Button>
         </div>
       )}
 
-      {composer && (
-        <Composer
-          mode={composer.mode}
-          anchor={composer.anchor}
-          onSubmit={submitComposer}
-          onCancel={() => setComposer(null)}
-        />
-      )}
+      <Dialog open={!!composer} onOpenChange={(open) => !open && setComposer(null)}>
+        <DialogContent className="sm:max-w-lg">
+          {composer && <ComposerForm mode={composer.mode} anchor={composer.anchor} onSubmit={submitComposer} />}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -253,32 +275,32 @@ function ReviewBar({
 }) {
   const reworking = state === "reworking";
   return (
-    <div className="border-t border-gray-200 p-3">
-      <textarea
-        className="mb-2 w-full resize-none rounded border border-gray-300 p-2 text-sm"
+    <div className="border-t border-border p-3">
+      <Textarea
+        className="mb-2 resize-none"
         rows={2}
         placeholder="Overall review note (optional)…"
         value={reviewNote}
         onChange={(e) => setReviewNote(e.target.value)}
       />
       <div className="flex items-center gap-2">
-        <button
-          className="btn-primary"
+        <Button
+          size="sm"
           disabled={reworking}
           onClick={() => submitReview(sid, reviewNote.trim() || null).then(() => setReviewNote(""))}
         >
           Submit review {count > 0 ? `(${count})` : ""}
-        </button>
-        <button className="btn" onClick={() => endSession(sid)}>
+        </Button>
+        <Button variant="ghost" size="sm" onClick={() => endSession(sid)}>
           End
-        </button>
+        </Button>
         {reworking && (
-          <span className="text-xs text-amber-700">
+          <span className="flex items-center gap-1 text-xs text-warning">
             <Spinner /> reworking…
           </span>
         )}
-        {reworkResult === "success" && !reworking && <span className="text-xs text-green-700">reworked ✓</span>}
-        {reworkResult === "error" && !reworking && <span className="text-xs text-red-700">rework failed</span>}
+        {reworkResult === "success" && !reworking && <span className="text-xs text-success">reworked ✓</span>}
+        {reworkResult === "error" && !reworking && <span className="text-xs text-destructive">rework failed</span>}
       </div>
     </div>
   );
@@ -289,23 +311,25 @@ function QAList({ sid, questions }: { sid: string; questions: QuestionRecord[] }
   return (
     <ul className="space-y-3">
       {[...questions].reverse().map((q) => (
-        <li key={q.id} className="rounded border border-gray-200 p-2 text-sm">
+        <li key={q.id} className="rounded-md border border-border bg-card p-2 text-sm">
           <div className="mb-1 flex items-center gap-2">
             <QStatus status={q.status} />
-            <span className="text-xs text-gray-500">{anchorLabel(q.anchor)}</span>
+            <span className="text-xs text-muted-foreground">{anchorLabel(q.anchor)}</span>
             {q.status === "error" && (
-              <button className="btn ml-auto" onClick={() => retryQuestion(sid, q.id)}>
+              <Button variant="ghost" size="sm" className="ml-auto h-6 px-2" onClick={() => retryQuestion(sid, q.id)}>
                 Retry
-              </button>
+              </Button>
             )}
           </div>
           <div className="font-medium">{q.text}</div>
           {q.answerMarkdown && (
-            <div className="md-body mt-2 border-t border-gray-100 pt-2 text-gray-700">
+            <div className="md-body mt-2 border-t border-border pt-2 text-foreground/80">
               <Markdown remarkPlugins={[remarkGfm]}>{q.answerMarkdown}</Markdown>
             </div>
           )}
-          {q.status === "error" && q.errorMessage && <div className="mt-1 text-xs text-red-600">{q.errorMessage}</div>}
+          {q.status === "error" && q.errorMessage && (
+            <div className="mt-1 text-xs text-destructive">{q.errorMessage}</div>
+          )}
         </li>
       ))}
     </ul>
@@ -318,14 +342,16 @@ function ReviewList({ sid, feedback }: { sid: string; feedback: FeedbackRecord[]
   return (
     <ul className="space-y-2">
       {[...active].reverse().map((f) => (
-        <li key={f.id} className="rounded border border-gray-200 p-2 text-sm">
+        <li key={f.id} className="rounded-md border border-border bg-card p-2 text-sm">
           <div className="mb-1 flex items-center gap-2">
-            <span className="text-xs text-gray-500">{anchorLabel(f.anchor)}</span>
-            <span className="rounded bg-gray-100 px-1 text-[10px] uppercase text-gray-500">{f.status}</span>
+            <span className="text-xs text-muted-foreground">{anchorLabel(f.anchor)}</span>
+            <Badge variant="secondary" className="px-1.5 py-0 text-[10px] uppercase">
+              {f.status}
+            </Badge>
             {f.status === "queued" && (
-              <button className="btn ml-auto" onClick={() => removeFeedback(sid, f.id)}>
+              <Button variant="ghost" size="sm" className="ml-auto h-6 px-2" onClick={() => removeFeedback(sid, f.id)}>
                 Remove
-              </button>
+              </Button>
             )}
           </div>
           <div>{f.text}</div>
@@ -335,73 +361,56 @@ function ReviewList({ sid, feedback }: { sid: string; feedback: FeedbackRecord[]
   );
 }
 
-function Composer({
+function ComposerForm({
   mode,
   anchor,
   onSubmit,
-  onCancel,
 }: {
   mode: "ask" | "feedback";
   anchor: Anchor | null;
   onSubmit: (text: string) => void;
-  onCancel: () => void;
 }) {
   const [text, setText] = useState("");
-  const ref = useRef<HTMLTextAreaElement>(null);
-  useEffect(() => ref.current?.focus(), []);
   return (
-    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/30" onClick={onCancel}>
-      <div className="w-[480px] rounded-lg bg-white p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-2 font-medium">
-          {mode === "ask" ? "Ask a question" : "Leave feedback"}{" "}
-          <span className="text-sm font-normal text-gray-500">({anchorLabel(anchor)})</span>
-        </div>
-        <textarea
-          ref={ref}
-          className="h-28 w-full resize-none rounded border border-gray-300 p-2 text-sm"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && text.trim()) onSubmit(text.trim());
-          }}
-          placeholder={mode === "ask" ? "What would you like to ask?" : "Your feedback…"}
-        />
-        <div className="mt-2 flex justify-end gap-2">
-          <button className="btn" onClick={onCancel}>
-            Cancel
-          </button>
-          <button className="btn-primary" disabled={!text.trim()} onClick={() => onSubmit(text.trim())}>
-            {mode === "ask" ? "Ask" : "Add feedback"}
-          </button>
-        </div>
-      </div>
-    </div>
+    <>
+      <DialogHeader>
+        <DialogTitle>{mode === "ask" ? "Ask a question" : "Leave feedback"}</DialogTitle>
+        <DialogDescription>{anchorLabel(anchor)}</DialogDescription>
+      </DialogHeader>
+      <Textarea
+        autoFocus
+        className="h-28 resize-none"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && text.trim()) onSubmit(text.trim());
+        }}
+        placeholder={mode === "ask" ? "What would you like to ask?" : "Your feedback…"}
+      />
+      <DialogFooter>
+        <DialogClose asChild>
+          <Button variant="outline">Cancel</Button>
+        </DialogClose>
+        <Button disabled={!text.trim()} onClick={() => onSubmit(text.trim())}>
+          {mode === "ask" ? "Ask" : "Add feedback"}
+        </Button>
+      </DialogFooter>
+    </>
   );
 }
 
 const Q_STATUS: Record<QuestionRecord["status"], { label: string; cls: string; busy?: boolean }> = {
-  queued: { label: "queued", cls: "text-gray-500", busy: true },
-  "in-progress": { label: "answering", cls: "text-blue-600", busy: true },
-  answered: { label: "answered", cls: "text-green-700" },
-  error: { label: "error", cls: "text-red-600" },
+  queued: { label: "queued", cls: "text-muted-foreground", busy: true },
+  "in-progress": { label: "answering", cls: "text-info", busy: true },
+  answered: { label: "answered", cls: "text-success" },
+  error: { label: "error", cls: "text-destructive" },
 };
 function QStatus({ status }: { status: QuestionRecord["status"] }) {
   const s = Q_STATUS[status];
   return (
-    <span className={`flex items-center gap-1 text-xs font-medium ${s.cls}`}>
+    <span className={cn("flex items-center gap-1 text-xs font-medium", s.cls)}>
       {s.busy ? <Spinner /> : status === "answered" ? "✓" : "!"} {s.label}
     </span>
-  );
-}
-
-function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      className={`flex-1 px-3 py-2 ${active ? "border-b-2 border-blue-600 font-medium text-blue-700" : "text-gray-500"}`}
-      onClick={onClick}
-    >
-      {children}
-    </button>
   );
 }
 
@@ -409,8 +418,10 @@ const Spinner = () => (
   <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
 );
 const Empty = ({ children }: { children: React.ReactNode }) => (
-  <div className="mt-6 text-center text-sm text-gray-400">{children}</div>
+  <div className="mt-6 text-center text-sm text-muted-foreground">{children}</div>
 );
 const Centered = ({ children }: { children: React.ReactNode }) => (
-  <div className="flex h-full items-center justify-center p-6 text-center text-gray-600">{children}</div>
+  <div className="flex h-full items-center justify-center bg-background p-6 text-center text-muted-foreground">
+    {children}
+  </div>
 );

@@ -1,0 +1,69 @@
+# Plan Review
+
+A lean tool for reviewing agent-generated markdown plans interactively: read them formatted in a desktop viewer, select lines to **ask questions** (answered from the agent's live context) or **leave feedback** (anchored, queued, never triggering an immediate regeneration), and **submit a review** as one batch that the agent reworks.
+
+## Architecture
+
+Three cooperating processes:
+
+1. **Broker** (`packages/broker`) — an always-on Bun daemon (macOS LaunchAgent). A message broker + file watcher + durable SQLite store. The `questions` table doubles as a crash-safe work-queue; feedback is persisted and surfaced to the agent but never wakes it on its own.
+2. **CLI** (`packages/cli`, `plan-review`) — the surface for the agent (`attach`/`wait`/`answer`/`rework-done`), the user (`open`), and daemon management (`install`/`uninstall`/`status`/`restart`).
+3. **Viewer** (`apps/viewer`) — a Tauri v2 + React 19 desktop app. Live markdown render, line/range selection, anchored & general Ask/Comment, a Q&A panel with in-progress/success/error indicators, and a Review tab with an overall note + Submit.
+
+The **agent** is a Claude Code agent driven by the `plan-review` skill (`skills/plan-review/SKILL.md`). It answers questions from its own live context and reworks the file only on `finalize`.
+
+### Two entry paths
+
+- **Agent-initiated**: Claude writes a markdown plan, auto-invokes the skill, runs `plan-review open --json`, attaches as `--source agent`, and enters the wait-loop with its rich context.
+- **User-initiated**: you open a `.md` yourself with no agent; the broker spawns a fresh headless Claude agent (Agent SDK, auth inherited from `~/.claude`) seeded with the file + prior review history, which attaches as `--source spawned` and runs the same loop.
+
+State is keyed by the plan's absolute path, so reviews (Q&A + feedback) survive across sessions and seed freshly-spawned agents.
+
+## Setup
+
+```sh
+bun install
+```
+
+Prerequisites: Bun, and (for the viewer) the Rust toolchain + Xcode Command Line Tools.
+
+### Install the daemon (always-on)
+
+```sh
+bun run packages/cli/src/index.ts install     # writes ~/Library/LaunchAgents/ai.plan-review.broker.plist
+bun run packages/cli/src/index.ts status
+```
+
+### Install the skill (for agent-initiated reviews)
+
+Symlink the skill into Claude Code's skills directory:
+
+```sh
+ln -s "$PWD/skills/plan-review" ~/.claude/skills/plan-review
+```
+
+### Run the viewer
+
+```sh
+cd apps/viewer && bun run tauri dev      # dev (hot reload)
+# or build a desktop app:
+cd apps/viewer && bun run tauri build
+```
+
+To open a specific plan, the CLI sets `PLAN_REVIEW_SESSION`/`PLAN_REVIEW_PATH` for the viewer binary:
+
+```sh
+bun run packages/cli/src/index.ts open path/to/plan.md
+```
+
+(In dev/browser you can also pass `?path=/abs/plan.md` or `?session=<sid>` on the Vite URL.)
+
+## Develop
+
+```sh
+bun test                                  # broker unit + HTTP + watcher + spawner tests
+bunx tsc --noEmit -p packages/broker/tsconfig.json
+cd apps/viewer && bun run build           # typecheck + vite build
+```
+
+After changing broker code, reload the daemon: `bun run packages/cli/src/index.ts restart`.

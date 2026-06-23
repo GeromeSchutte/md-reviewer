@@ -1,5 +1,5 @@
 import { writeFileSync, rmSync } from "node:fs";
-import { DEFAULT_PORT } from "@plan-review/shared";
+import { DEFAULT_PORT, brokerBaseUrl } from "@plan-review/shared";
 import { Broker } from "./broker";
 import { createServer } from "./server";
 import { FileWatcher } from "./watcher";
@@ -17,7 +17,7 @@ function main(): void {
     spawnAgent: (info) => spawner(info),
   });
   const watcher = new FileWatcher((abspath, content) => broker.updateDoc(abspath, content));
-  const spawner = makeSpawner();
+  const spawner = makeSpawner({ store: broker.store, baseUrl: brokerBaseUrl(DEFAULT_PORT) });
   const app = createServer(broker);
 
   let server: ReturnType<typeof Bun.serve>;

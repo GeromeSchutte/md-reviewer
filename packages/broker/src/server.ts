@@ -36,13 +36,17 @@ export function createServer(broker: Broker): Hono {
     return streamSSE(c, async (stream) => {
       // Serialize writes so concurrent broadcasts don't interleave on the wire.
       let chain: Promise<unknown> = Promise.resolve();
+      const push = (fn: () => Promise<void>) => {
+        chain = chain.then(fn);
+      };
       const client = {
-        send: (event: ServerEvent) => {
-          chain = chain.then(() => stream.writeSSE({ event: event.type, data: JSON.stringify(event) }));
-        },
+        send: (event: ServerEvent) => push(() => stream.writeSSE({ event: event.type, data: JSON.stringify(event) })),
       };
       const unsubscribe = broker.subscribe(sid, client);
+      // Keepalive comment well within Bun's 255s idleTimeout so an idle stream isn't dropped.
+      const ping = setInterval(() => push(() => stream.writeSSE({ event: "ping", data: "" })), 25_000);
       await new Promise<void>((resolve) => stream.onAbort(resolve));
+      clearInterval(ping);
       unsubscribe();
     });
   });

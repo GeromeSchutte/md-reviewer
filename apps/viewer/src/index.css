@@ -1,0 +1,106 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* Highlight for the source lines an active selection/anchor maps to. */
+[data-anchor-active="true"] {
+  background-color: rgb(254 240 138 / 0.5);
+}
+
+@layer components {
+  .btn {
+    @apply rounded border border-gray-300 px-2 py-1 text-sm hover:bg-gray-50 disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply rounded bg-blue-600 px-3 py-1 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50;
+  }
+}
+
+/* Minimal markdown typography for the rendered document and answers. */
+.md-body {
+  line-height: 1.65;
+}
+.md-body h1 {
+  font-size: 1.6rem;
+  font-weight: 700;
+  margin: 1.2rem 0 0.6rem;
+}
+.md-body h2 {
+  font-size: 1.3rem;
+  font-weight: 700;
+  margin: 1.1rem 0 0.5rem;
+}
+.md-body h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 1rem 0 0.4rem;
+}
+.md-body p {
+  margin: 0.6rem 0;
+}
+.md-body ul,
+.md-body ol {
+  margin: 0.6rem 0;
+  padding-left: 1.4rem;
+}
+.md-body ul {
+  list-style: disc;
+}
+.md-body ol {
+  list-style: decimal;
+}
+.md-body li {
+  margin: 0.2rem 0;
+}
+.md-body code {
+  background: rgb(0 0 0 / 0.06);
+  padding: 0.1rem 0.3rem;
+  border-radius: 0.25rem;
+  font-size: 0.9em;
+}
+.md-body pre {
+  background: rgb(0 0 0 / 0.06);
+  padding: 0.75rem;
+  border-radius: 0.4rem;
+  overflow-x: auto;
+  margin: 0.6rem 0;
+}
+.md-body pre code {
+  background: none;
+  padding: 0;
+}
+.md-body blockquote {
+  border-left: 3px solid rgb(0 0 0 / 0.15);
+  padding-left: 0.8rem;
+  color: rgb(0 0 0 / 0.6);
+  margin: 0.6rem 0;
+}
+.md-body a {
+  color: rgb(37 99 235);
+  text-decoration: underline;
+}
+.md-body table {
+  border-collapse: collapse;
+  margin: 0.6rem 0;
+}
+.md-body th,
+.md-body td {
+  border: 1px solid rgb(0 0 0 / 0.15);
+  padding: 0.3rem 0.6rem;
+}
+.md-body ::selection {
+  background: rgb(191 219 254);
+}

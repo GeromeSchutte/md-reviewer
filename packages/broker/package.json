@@ -1,0 +1,14 @@
+{
+  "name": "@plan-review/broker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "bin": {
+    "plan-review-broker": "src/index.ts"
+  },
+  "dependencies": {
+    "@plan-review/shared": "workspace:*",
+    "hono": "^4.12.27"
+  }
+}

@@ -9,6 +9,7 @@
   "scripts": {
     "broker": "bun run packages/broker/src/index.ts",
     "cli": "bun run packages/cli/src/index.ts",
+    "tauri:build": "bun run --filter '@plan-review/viewer' tauri build",
     "typecheck": "tsc --build",
     "test": "bun test"
   },

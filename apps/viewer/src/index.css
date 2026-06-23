@@ -3,59 +3,73 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* shadcn/ui design tokens (neutral base). The app is pinned to dark via
-   <html class="dark"> in index.html, but :root keeps a working light palette so
-   a toggle is a one-line change later. */
+/* ── "Drafting table at night" ───────────────────────────────────────────
+   A plan under review is a drawing on a drafting table. The reading surface
+   is a calm, deep, cool-ink board; the reader's pending marks are warm pencil
+   (--marker, amber); the structural apparatus (contents, gutter, line-tags)
+   is rendered like drafting guides in mono. Blue (--brand) stays quiet — it
+   is plumbing for links and focus only; amber is what the eye should hit
+   first. The app is pinned to dark via <html class="dark">; :root keeps a
+   coherent light palette so a toggle stays a one-line change. */
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  --radius: 0.6rem;
+
+  --background: oklch(0.99 0.003 250);
+  --foreground: oklch(0.23 0.02 260);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.23 0.02 260);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --success: oklch(0.6 0.13 150);
-  --warning: oklch(0.7 0.15 75);
-  --info: oklch(0.55 0.18 255);
-  --link: oklch(0.52 0.18 255);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --popover-foreground: oklch(0.23 0.02 260);
+  --primary: oklch(0.27 0.02 260);
+  --primary-foreground: oklch(0.98 0.004 250);
+  --secondary: oklch(0.96 0.005 255);
+  --secondary-foreground: oklch(0.27 0.02 260);
+  --muted: oklch(0.965 0.004 255);
+  --muted-foreground: oklch(0.5 0.015 258);
+  --accent: oklch(0.95 0.006 255);
+  --accent-foreground: oklch(0.27 0.02 260);
+  --destructive: oklch(0.58 0.21 25);
+  --success: oklch(0.58 0.12 158);
+  --warning: oklch(0.7 0.15 55);
+  --info: oklch(0.55 0.14 248);
+  --brand: oklch(0.5 0.16 250);
+  --marker: oklch(0.72 0.14 70);
+  --link: var(--brand);
+  --border: oklch(0.9 0.006 258);
+  --input: oklch(0.9 0.006 258);
+  --ring: var(--brand);
 }
 
 .dark {
   color-scheme: dark;
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --success: oklch(0.72 0.15 150);
-  --warning: oklch(0.8 0.15 80);
-  --info: oklch(0.72 0.15 255);
-  --link: oklch(0.72 0.15 255);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+
+  /* Deep cool-ink ground with a faint blue cast — not clinical neutral. */
+  --background: oklch(0.17 0.013 256);
+  --foreground: oklch(0.925 0.006 80); /* warm off-white, paper-like */
+  --card: oklch(0.214 0.015 256);
+  --card-foreground: oklch(0.925 0.006 80);
+  --popover: oklch(0.225 0.016 256);
+  --popover-foreground: oklch(0.925 0.006 80);
+  /* Primary stays near-white (shadcn-dark): committal buttons read quiet,
+     so the amber marker keeps the eye. */
+  --primary: oklch(0.92 0.006 80);
+  --primary-foreground: oklch(0.22 0.012 256);
+  --secondary: oklch(0.26 0.015 256);
+  --secondary-foreground: oklch(0.925 0.006 80);
+  --muted: oklch(0.255 0.014 256);
+  --muted-foreground: oklch(0.67 0.016 256);
+  --accent: oklch(0.275 0.018 256);
+  --accent-foreground: oklch(0.925 0.006 80);
+  --destructive: oklch(0.66 0.19 24);
+  --success: oklch(0.73 0.13 160);
+  --warning: oklch(0.78 0.15 58);
+  --info: oklch(0.72 0.12 244);
+  --brand: oklch(0.72 0.13 248); /* drafting ink-blue — links + focus only */
+  --marker: oklch(0.81 0.13 75); /* editor's pencil — the one bold accent */
+  --link: var(--brand);
+  --border: oklch(1 0 0 / 9%);
+  --input: oklch(1 0 0 / 13%);
+  --ring: var(--brand);
 }
 
 @theme inline {
@@ -63,6 +77,13 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+
+  --font-sans: "IBM Plex Sans Variable", ui-sans-serif, system-ui,
+    -apple-system, "Segoe UI", sans-serif;
+  --font-display: "IBM Plex Sans Condensed", "IBM Plex Sans Variable",
+    ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", "Menlo", monospace;
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -81,6 +102,8 @@
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-info: var(--info);
+  --color-brand: var(--brand);
+  --color-marker: var(--marker);
   --color-link: var(--link);
   --color-border: var(--border);
   --color-input: var(--input);
@@ -104,43 +127,113 @@ body,
 }
 
 body {
-  font-family: "Noto Sans Variable", ui-sans-serif, system-ui,
-    -apple-system, "Segoe UI", sans-serif;
-  font-weight: 350;
+  font-family: var(--font-sans);
+  font-weight: 380;
   line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "cv05" 1; /* single-story lowercase a — calmer reading */
 }
 
-/* Highlight for the source lines an active selection/anchor maps to. */
+/* Quiet, on-surface scrollbars rather than the OS default chrome. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklch, var(--foreground) 18%, transparent) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: color-mix(in oklch, var(--foreground) 16%, transparent);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  border-radius: 9999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklch, var(--foreground) 28%, transparent);
+  background-clip: padding-box;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Highlight for the source lines an active selection/anchor maps to — the
+   amber pencil, tying gutter → band → sidebar → document into one accent. */
 [data-anchor-active="true"] {
-  background-color: color-mix(in oklch, var(--warning) 30%, transparent);
+  background-color: color-mix(in oklch, var(--marker) 22%, transparent);
+  box-shadow: inset 2px 0 0 var(--marker);
 }
 
-/* Minimal markdown typography for the rendered document and answers. */
+/* ── Document & answer typography ──────────────────────────────────────── */
 .md-body {
-  line-height: 1.6;
+  font-size: 1.0625rem; /* ~17px reading size */
+  line-height: 1.75;
+  color: color-mix(in oklch, var(--foreground) 92%, var(--background));
+  font-variant-numeric: oldstyle-nums;
+}
+
+/* Condensed display headings — a tighter editorial voice, distinct from the
+   regular-width body and the mono chrome. */
+.md-body h1,
+.md-body h2,
+.md-body h3,
+.md-body h4 {
+  font-family: var(--font-display);
+  color: var(--foreground);
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+  scroll-margin-top: 1.5rem;
 }
 .md-body h1 {
-  font-size: 1.6rem;
+  font-size: 2.35rem;
   font-weight: 700;
-  margin: 2rem 0 1rem;
+  line-height: 1.08;
+  margin: 0 0 0.75rem;
 }
 .md-body h2 {
-  font-size: 1.3rem;
-  font-weight: 700;
-  margin: 1.8rem 0 0.8rem;
+  font-size: 1.6rem;
+  font-weight: 600;
+  line-height: 1.18;
+  margin: 2.4rem 0 0.9rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--border);
 }
 .md-body h3 {
-  font-size: 1.1rem;
+  font-size: 1.28rem;
   font-weight: 600;
-  margin: 1.5rem 0 0.6rem;
+  line-height: 1.3;
+  margin: 1.9rem 0 0.6rem;
 }
+.md-body h4 {
+  font-size: 1.08rem;
+  font-weight: 600;
+  margin: 1.5rem 0 0.5rem;
+}
+
 .md-body p {
   margin: 1rem 0;
 }
+/* Lede: the first paragraph after the title reads larger and a touch lighter. */
+.md-body > h1 + p {
+  font-size: 1.2rem;
+  line-height: 1.6;
+  color: color-mix(in oklch, var(--foreground) 78%, var(--background));
+  margin-top: 0.5rem;
+}
+
 .md-body ul,
 .md-body ol {
   margin: 1rem 0;
-  padding-left: 1.6rem;
+  padding-left: 1.5rem;
 }
 .md-body ul {
   list-style: disc;
@@ -149,44 +242,138 @@ body {
   list-style: decimal;
 }
 .md-body li {
-  margin: 0.4rem 0;
+  margin: 0.45rem 0;
+  padding-left: 0.2rem;
 }
+.md-body ul > li::marker {
+  color: var(--marker);
+}
+.md-body ol > li::marker {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  color: var(--muted-foreground);
+}
+.md-body li > ul,
+.md-body li > ol {
+  margin: 0.35rem 0;
+}
+
+/* Inline + block code = mono, sitting in a recessed "well". */
 .md-body code {
+  font-family: var(--font-mono);
+  font-size: 0.84em;
   background: var(--muted);
-  padding: 0.1rem 0.3rem;
-  border-radius: 0.25rem;
-  font-size: 0.9em;
+  color: color-mix(in oklch, var(--foreground) 90%, var(--background));
+  padding: 0.12em 0.38em;
+  border-radius: 0.3rem;
+  border: 1px solid var(--border);
 }
 .md-body pre {
-  background: var(--muted);
-  padding: 0.9rem;
-  border-radius: 0.4rem;
+  font-family: var(--font-mono);
+  background: color-mix(in oklch, var(--background) 60%, #000);
+  border: 1px solid var(--border);
+  padding: 1rem 1.1rem;
+  border-radius: var(--radius);
   overflow-x: auto;
-  margin: 1rem 0;
+  margin: 1.4rem 0;
+  font-size: 0.86rem;
+  line-height: 1.6;
 }
 .md-body pre code {
   background: none;
+  border: none;
   padding: 0;
+  font-size: inherit;
+  color: color-mix(in oklch, var(--foreground) 90%, var(--background));
 }
+
+/* Blockquote = a margin note / callout, leaned on the brand hairline. */
 .md-body blockquote {
-  border-left: 3px solid var(--border);
-  padding-left: 1rem;
-  color: var(--muted-foreground);
-  margin: 1rem 0;
+  border-left: 2px solid color-mix(in oklch, var(--brand) 70%, transparent);
+  background: color-mix(in oklch, var(--brand) 8%, transparent);
+  padding: 0.6rem 1.1rem;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  color: color-mix(in oklch, var(--foreground) 82%, var(--background));
+  margin: 1.4rem 0;
 }
+.md-body blockquote p {
+  margin: 0.3rem 0;
+}
+
+/* Links: a considered underline, not the browser default. */
 .md-body a {
   color: var(--link);
   text-decoration: underline;
+  text-decoration-color: color-mix(in oklch, var(--link) 38%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+  transition: color 0.12s ease, text-decoration-color 0.12s ease;
 }
+.md-body a:hover {
+  color: color-mix(in oklch, var(--link) 80%, white);
+  text-decoration-color: currentColor;
+}
+
+/* Tables fill the reading measure, headed in mono caps. */
 .md-body table {
+  width: 100%;
   border-collapse: collapse;
-  margin: 1rem 0;
-}
-.md-body th,
-.md-body td {
+  margin: 1.5rem 0;
+  font-size: 0.92rem;
   border: 1px solid var(--border);
-  padding: 0.45rem 0.8rem;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
 }
+.md-body thead {
+  background: color-mix(in oklch, var(--foreground) 5%, transparent);
+}
+.md-body th {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: left;
+  color: var(--muted-foreground);
+  padding: 0.6rem 0.9rem;
+  border-bottom: 1px solid var(--border);
+}
+.md-body td {
+  padding: 0.6rem 0.9rem;
+  border-bottom: 1px solid color-mix(in oklch, var(--border) 60%, transparent);
+}
+.md-body tbody tr:last-child td {
+  border-bottom: none;
+}
+.md-body tbody tr:hover {
+  background: color-mix(in oklch, var(--foreground) 3.5%, transparent);
+}
+
+.md-body hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 2rem 0;
+}
+.md-body strong {
+  font-weight: 600;
+  color: var(--foreground);
+}
+
 .md-body ::selection {
-  background: color-mix(in oklch, var(--link) 35%, transparent);
+  background: color-mix(in oklch, var(--marker) 32%, transparent);
+}
+
+/* Compact variant for rendered answers inside sidebar cards. */
+.md-body--compact {
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+.md-body--compact p {
+  margin: 0.5rem 0;
+}
+.md-body--compact :first-child {
+  margin-top: 0;
+}
+.md-body--compact :last-child {
+  margin-bottom: 0;
 }

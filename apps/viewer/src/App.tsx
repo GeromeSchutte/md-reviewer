@@ -1,21 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { Popover } from "radix-ui";
 import type { Anchor, FeedbackRecord, LifecycleState, QuestionRecord, ReworkResult } from "@plan-review/shared";
 import { MarkdownView } from "./components/MarkdownView";
-import type { CapturedSelection } from "./selection";
+import { ComposerBody, type ComposerMode } from "./components/Composer";
+import { anchorLabel } from "./selection";
 import { resolveSession } from "./launch";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
@@ -30,10 +23,6 @@ import {
 } from "./broker";
 
 type Tab = "qa" | "review";
-interface ComposerState {
-  mode: "ask" | "feedback";
-  anchor: Anchor | null;
-}
 
 // Token-based status chips. `cls` overrides the outline Badge's color via tailwind-merge.
 const STATE_META: Record<LifecycleState, { label: string; cls: string; busy?: boolean }> = {
@@ -45,12 +34,6 @@ const STATE_META: Record<LifecycleState, { label: string; cls: string; busy?: bo
   "agent-disconnected": { label: "Agent offline", cls: "border-destructive/40 bg-destructive/15 text-destructive" },
 };
 
-function anchorLabel(a: Anchor | null): string {
-  if (!a) return "general";
-  const { startLine, endLine } = a.lineRange;
-  return startLine === endLine ? `line ${startLine}` : `lines ${startLine}–${endLine}`;
-}
-
 export default function App() {
   const [sid, setSid] = useState<string | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
@@ -61,8 +44,7 @@ export default function App() {
   const [state, setState] = useState<LifecycleState>("no-agent");
   const [reworkResult, setReworkResult] = useState<ReworkResult | null>(null);
   const [tab, setTab] = useState<Tab>("review");
-  const [selection, setSelection] = useState<CapturedSelection | null>(null);
-  const [composer, setComposer] = useState<ComposerState | null>(null);
+  const [generalOpen, setGeneralOpen] = useState(false);
   const [reviewNote, setReviewNote] = useState("");
 
   // --- bootstrap session ---
@@ -122,19 +104,17 @@ export default function App() {
     return dispose;
   }, [sid]);
 
-  const onSelect = useCallback((sel: CapturedSelection | null) => setSelection(sel), []);
-
-  const submitComposer = useCallback(
-    async (text: string) => {
-      if (!sid || !composer) return;
-      if (composer.mode === "ask") {
-        const id = await askQuestion(sid, composer.anchor, text);
+  const submitAnnotation = useCallback(
+    async (anchor: Anchor | null, text: string, mode: ComposerMode) => {
+      if (!sid) return;
+      if (mode === "ask") {
+        const id = await askQuestion(sid, anchor, text);
         setQuestions((qs) => [
           ...qs,
           {
             id,
             abspath: "",
-            anchor: composer.anchor,
+            anchor,
             docVersion: "",
             text,
             createdAt: Date.now(),
@@ -147,20 +127,12 @@ export default function App() {
         ]);
         setTab("qa");
       } else {
-        await leaveFeedback(sid, composer.anchor, text);
+        await leaveFeedback(sid, anchor, text);
         setTab("review");
       }
-      setComposer(null);
-      setSelection(null);
-      window.getSelection()?.removeAllRanges();
     },
-    [sid, composer],
+    [sid],
   );
-
-  const openComposer = (mode: "ask" | "feedback", anchor: Anchor | null) => {
-    setComposer({ mode, anchor });
-    setSelection(null);
-  };
 
   const meta = STATE_META[state];
   const queuedFeedback = useMemo(() => feedback.filter((f) => f.status === "queued"), [feedback]);
@@ -177,20 +149,38 @@ export default function App() {
           {meta.busy && <Spinner />} {meta.label}
         </Badge>
         {!connected && <span className="text-xs text-destructive">disconnected</span>}
-        <div className="ml-auto flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => openComposer("ask", null)}>
-            Ask (general)
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => openComposer("feedback", null)}>
-            Comment (general)
-          </Button>
+        <div className="ml-auto">
+          <Popover.Root open={generalOpen} onOpenChange={setGeneralOpen}>
+            <Popover.Trigger asChild>
+              <Button variant="outline" size="sm">
+                New note
+              </Button>
+            </Popover.Trigger>
+            <Popover.Portal>
+              <Popover.Content
+                align="end"
+                sideOffset={8}
+                onOpenAutoFocus={(e) => e.preventDefault()}
+                className="z-50 w-80 rounded-lg border border-border bg-popover p-3 text-popover-foreground shadow-lg outline-none"
+              >
+                <ComposerBody
+                  label="general — not tied to any line"
+                  onSubmit={(text, mode) => {
+                    void submitAnnotation(null, text, mode);
+                    setGeneralOpen(false);
+                  }}
+                  onCancel={() => setGeneralOpen(false)}
+                />
+              </Popover.Content>
+            </Popover.Portal>
+          </Popover.Root>
         </div>
       </header>
 
       <div className="flex min-h-0 flex-1">
         {/* document */}
         <main className="min-w-0 flex-1 overflow-auto">
-          <MarkdownView markdown={markdown} onSelect={onSelect} />
+          <MarkdownView markdown={markdown} onSubmit={submitAnnotation} />
         </main>
 
         {/* sidebar */}
@@ -227,33 +217,6 @@ export default function App() {
           </Tabs>
         </aside>
       </div>
-
-      {/* floating selection toolbar */}
-      {selection && !composer && (
-        <div
-          className="fixed z-20 flex items-center gap-1 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-lg"
-          style={{ top: selection.rect.bottom + 6, left: selection.rect.left }}
-        >
-          <span className="px-1 py-0.5 text-xs text-muted-foreground">{anchorLabel(selection.anchor)}</span>
-          <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => openComposer("ask", selection.anchor)}>
-            Ask
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2"
-            onClick={() => openComposer("feedback", selection.anchor)}
-          >
-            Comment
-          </Button>
-        </div>
-      )}
-
-      <Dialog open={!!composer} onOpenChange={(open) => !open && setComposer(null)}>
-        <DialogContent className="sm:max-w-lg">
-          {composer && <ComposerForm mode={composer.mode} anchor={composer.anchor} onSubmit={submitComposer} />}
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
@@ -307,7 +270,7 @@ function ReviewBar({
 }
 
 function QAList({ sid, questions }: { sid: string; questions: QuestionRecord[] }) {
-  if (questions.length === 0) return <Empty>No questions yet. Select text or use “Ask”.</Empty>;
+  if (questions.length === 0) return <Empty>No questions yet. Select lines or use “New note”.</Empty>;
   return (
     <ul className="space-y-3">
       {[...questions].reverse().map((q) => (
@@ -338,7 +301,7 @@ function QAList({ sid, questions }: { sid: string; questions: QuestionRecord[] }
 
 function ReviewList({ sid, feedback }: { sid: string; feedback: FeedbackRecord[] }) {
   const active = feedback.filter((f) => f.status === "queued" || f.status === "submitted");
-  if (active.length === 0) return <Empty>No feedback yet. Select text or use “Comment”.</Empty>;
+  if (active.length === 0) return <Empty>No feedback yet. Select lines or use “New note”.</Empty>;
   return (
     <ul className="space-y-2">
       {[...active].reverse().map((f) => (
@@ -358,44 +321,6 @@ function ReviewList({ sid, feedback }: { sid: string; feedback: FeedbackRecord[]
         </li>
       ))}
     </ul>
-  );
-}
-
-function ComposerForm({
-  mode,
-  anchor,
-  onSubmit,
-}: {
-  mode: "ask" | "feedback";
-  anchor: Anchor | null;
-  onSubmit: (text: string) => void;
-}) {
-  const [text, setText] = useState("");
-  return (
-    <>
-      <DialogHeader>
-        <DialogTitle>{mode === "ask" ? "Ask a question" : "Leave feedback"}</DialogTitle>
-        <DialogDescription>{anchorLabel(anchor)}</DialogDescription>
-      </DialogHeader>
-      <Textarea
-        autoFocus
-        className="h-28 resize-none"
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => {
-          if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && text.trim()) onSubmit(text.trim());
-        }}
-        placeholder={mode === "ask" ? "What would you like to ask?" : "Your feedback…"}
-      />
-      <DialogFooter>
-        <DialogClose asChild>
-          <Button variant="outline">Cancel</Button>
-        </DialogClose>
-        <Button disabled={!text.trim()} onClick={() => onSubmit(text.trim())}>
-          {mode === "ask" ? "Ask" : "Add feedback"}
-        </Button>
-      </DialogFooter>
-    </>
   );
 }
 

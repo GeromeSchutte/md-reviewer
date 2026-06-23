@@ -45,7 +45,10 @@ export default function App() {
   const [reworkResult, setReworkResult] = useState<ReworkResult | null>(null);
   const [tab, setTab] = useState<Tab>("review");
   const [generalOpen, setGeneralOpen] = useState(false);
+  const [endOpen, setEndOpen] = useState(false);
   const [reviewNote, setReviewNote] = useState("");
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [mainEl, setMainEl] = useState<HTMLElement | null>(null);
 
   // --- bootstrap session ---
   useEffect(() => {
@@ -240,7 +243,7 @@ function ReviewBar({
 }) {
   const reworking = state === "reworking";
   return (
-    <div className="border-t border-border p-3">
+    <div className="border-t border-border bg-card/50 p-3">
       <Textarea
         className="mb-2 resize-none"
         rows={2}
@@ -254,46 +257,56 @@ function ReviewBar({
           disabled={reworking}
           onClick={() => submitReview(sid, reviewNote.trim() || null).then(() => setReviewNote(""))}
         >
-          Submit review {count > 0 ? `(${count})` : ""}
+          Submit review{count > 0 ? ` · ${count}` : ""}
         </Button>
-        <Button variant="ghost" size="sm" onClick={() => endSession(sid)}>
-          End
-        </Button>
-        {reworking && (
-          <span className="flex items-center gap-1 text-xs text-warning">
-            <Spinner /> reworking…
-          </span>
-        )}
-        {reworkResult === "success" && !reworking && <span className="text-xs text-success">reworked ✓</span>}
-        {reworkResult === "error" && !reworking && <span className="text-xs text-destructive">rework failed</span>}
+        <span className="ml-auto">
+          {reworking && (
+            <span className="flex items-center gap-1.5 font-mono text-[0.65rem] tracking-wide text-warning uppercase">
+              <Spinner /> reworking
+            </span>
+          )}
+          {reworkResult === "success" && !reworking && (
+            <span className="font-mono text-[0.65rem] tracking-wide text-success uppercase">reworked ✓</span>
+          )}
+          {reworkResult === "error" && !reworking && (
+            <span className="font-mono text-[0.65rem] tracking-wide text-destructive uppercase">rework failed</span>
+          )}
+        </span>
       </div>
     </div>
   );
 }
 
 function QAList({ sid, questions }: { sid: string; questions: QuestionRecord[] }) {
-  if (questions.length === 0) return <Empty>No questions yet. Select lines or use “New note”.</Empty>;
+  if (questions.length === 0)
+    return (
+      <Empty icon={MessageSquareText} title="No questions yet">
+        Select lines in the document, or use “New note”, to ask the agent.
+      </Empty>
+    );
   return (
-    <ul className="space-y-3">
+    <ul className="space-y-2.5">
       {[...questions].reverse().map((q) => (
-        <li key={q.id} className="rounded-md border border-border bg-card p-2 text-sm">
-          <div className="mb-1 flex items-center gap-2">
+        <li key={q.id} className="rounded-lg border border-border bg-card p-3 text-sm shadow-xs">
+          <div className="mb-2 flex items-center gap-2">
             <QStatus status={q.status} />
-            <span className="text-xs text-muted-foreground">{anchorLabel(q.anchor)}</span>
-            {q.status === "error" && (
-              <Button variant="ghost" size="sm" className="ml-auto h-6 px-2" onClick={() => retryQuestion(sid, q.id)}>
-                Retry
-              </Button>
-            )}
+            <div className="ml-auto flex items-center gap-1.5">
+              {q.status === "error" && (
+                <Button variant="ghost" size="xs" onClick={() => retryQuestion(sid, q.id)}>
+                  Retry
+                </Button>
+              )}
+              <AnchorTag anchor={q.anchor} />
+            </div>
           </div>
-          <div className="font-medium">{q.text}</div>
+          <p className="font-medium text-foreground">{q.text}</p>
           {q.answerMarkdown && (
-            <div className="md-body mt-2 border-t border-border pt-2 text-foreground/80">
+            <div className="md-body md-body--compact mt-2.5 border-t border-border pt-2.5 text-foreground/80">
               <Markdown remarkPlugins={[remarkGfm]}>{q.answerMarkdown}</Markdown>
             </div>
           )}
           {q.status === "error" && q.errorMessage && (
-            <div className="mt-1 text-xs text-destructive">{q.errorMessage}</div>
+            <div className="mt-2 rounded-md bg-destructive/10 px-2 py-1.5 text-xs text-destructive">{q.errorMessage}</div>
           )}
         </li>
       ))}
@@ -303,52 +316,83 @@ function QAList({ sid, questions }: { sid: string; questions: QuestionRecord[] }
 
 function ReviewList({ sid, feedback }: { sid: string; feedback: FeedbackRecord[] }) {
   const active = feedback.filter((f) => f.status === "queued" || f.status === "submitted");
-  if (active.length === 0) return <Empty>No feedback yet. Select lines or use “New note”.</Empty>;
+  if (active.length === 0)
+    return (
+      <Empty icon={PenLine} title="No feedback yet">
+        Mark up lines in the document, then submit the batch to the agent for a rework.
+      </Empty>
+    );
   return (
-    <ul className="space-y-2">
-      {[...active].reverse().map((f) => (
-        <li key={f.id} className="rounded-md border border-border bg-card p-2 text-sm">
-          <div className="mb-1 flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">{anchorLabel(f.anchor)}</span>
-            <Badge variant="secondary" className="px-1.5 py-0 text-[10px] uppercase">
-              {f.status}
-            </Badge>
-            {f.status === "queued" && (
-              <Button variant="ghost" size="sm" className="ml-auto h-6 px-2" onClick={() => removeFeedback(sid, f.id)}>
-                Remove
-              </Button>
+    <ul className="space-y-2.5">
+      {[...active].reverse().map((f) => {
+        const queued = f.status === "queued";
+        return (
+          <li
+            key={f.id}
+            className={cn(
+              "rounded-lg border border-border bg-card p-3 text-sm shadow-xs",
+              queued && "border-l-2 border-l-marker",
             )}
-          </div>
-          <div>{f.text}</div>
-        </li>
-      ))}
+          >
+            <div className="mb-2 flex items-center gap-2">
+              <AnchorTag anchor={f.anchor} tone={queued ? "marker" : "muted"} />
+              <span
+                className={cn(
+                  "font-mono text-[0.6rem] font-medium tracking-[0.1em] uppercase",
+                  queued ? "text-marker" : "text-success",
+                )}
+              >
+                {f.status}
+              </span>
+              {queued && (
+                <Button variant="ghost" size="xs" className="ml-auto" onClick={() => removeFeedback(sid, f.id)}>
+                  Remove
+                </Button>
+              )}
+            </div>
+            <p className="text-foreground/90">{f.text}</p>
+          </li>
+        );
+      })}
     </ul>
   );
 }
 
-const Q_STATUS: Record<QuestionRecord["status"], { label: string; cls: string; busy?: boolean }> = {
+const Q_STATUS: Record<QuestionRecord["status"], { label: string; cls: string; busy?: boolean; icon?: string }> = {
   queued: { label: "queued", cls: "text-muted-foreground", busy: true },
   "in-progress": { label: "answering", cls: "text-info", busy: true },
-  answered: { label: "answered", cls: "text-success" },
-  error: { label: "error", cls: "text-destructive" },
+  answered: { label: "answered", cls: "text-success", icon: "✓" },
+  error: { label: "error", cls: "text-destructive", icon: "!" },
 };
 function QStatus({ status }: { status: QuestionRecord["status"] }) {
   const s = Q_STATUS[status];
   return (
-    <span className={cn("flex items-center gap-1 text-xs font-medium", s.cls)}>
-      {s.busy ? <Spinner /> : status === "answered" ? "✓" : "!"} {s.label}
+    <span className={cn("flex items-center gap-1.5 font-mono text-[0.62rem] font-medium tracking-[0.1em] uppercase", s.cls)}>
+      {s.busy ? <Spinner /> : s.icon} {s.label}
     </span>
   );
 }
 
 const Spinner = () => (
-  <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+  <span className="inline-block size-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
 );
-const Empty = ({ children }: { children: React.ReactNode }) => (
-  <div className="mt-6 text-center text-sm text-muted-foreground">{children}</div>
+const Empty = ({
+  icon: Icon,
+  title,
+  children,
+}: {
+  icon: typeof PenLine;
+  title: string;
+  children: React.ReactNode;
+}) => (
+  <div className="mt-10 flex flex-col items-center gap-2 px-8 text-center">
+    <Icon className="size-6 text-muted-foreground/40" strokeWidth={1.5} />
+    <p className="text-sm font-medium text-foreground/80">{title}</p>
+    <p className="text-xs leading-relaxed text-muted-foreground">{children}</p>
+  </div>
 );
 const Centered = ({ children }: { children: React.ReactNode }) => (
-  <div className="flex h-full items-center justify-center bg-background p-6 text-center text-muted-foreground">
+  <div className="flex h-full items-center justify-center bg-background p-6 text-center font-mono text-sm tracking-wide text-muted-foreground">
     {children}
   </div>
 );

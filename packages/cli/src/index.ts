@@ -63,14 +63,17 @@ function repoRoot(): string {
   return join(dirname(fileURLToPath(import.meta.url)), "../../..");
 }
 
-/** Find the built Tauri viewer binary, preferring a release bundle, then the debug build. */
+/**
+ * Find the built Tauri viewer binary. Only release builds embed the frontend and
+ * run standalone — the debug build loads the Vite dev URL and would show a blank
+ * window when launched without `tauri dev`, so it's deliberately excluded here.
+ */
 function findViewerBinary(): string | undefined {
   const root = repoRoot();
   const candidates = [
     process.env.PLAN_REVIEW_VIEWER_BIN,
     join(root, "apps/viewer/src-tauri/target/release/bundle/macos/plan-review.app/Contents/MacOS/plan-review"),
     join(root, "apps/viewer/src-tauri/target/release/app"),
-    join(root, "apps/viewer/src-tauri/target/debug/app"),
   ].filter((p): p is string => !!p);
   return candidates.find((p) => existsSync(p));
 }
@@ -87,8 +90,9 @@ function launchViewer(sid: string, abspath: string): void {
     console.log(`opened viewer for session ${sid}`);
   } else {
     console.log(`session ${sid} ready for ${abspath} (broker at ${baseUrl()})`);
-    console.log("no viewer binary found — build it with `cd apps/viewer && bun run tauri build`,");
-    console.log("or run `cd apps/viewer && bun run tauri dev` and open `?session=" + sid + "`.");
+    console.log("no release viewer found — build it once with:");
+    console.log("  cd apps/viewer && bun run tauri build --no-bundle");
+    console.log(`(for development: cd apps/viewer && bun run tauri dev, then open ?session=${sid})`);
   }
 }
 

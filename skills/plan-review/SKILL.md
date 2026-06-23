@@ -1,6 +1,6 @@
 ---
 name: plan-review
-description: Open a generated markdown plan/document in the live Plan Review viewer for interactive review. Use this right after you write or substantially revise a markdown plan, design doc, spec, or report file that the user should review — it lets them read it formatted, select lines to ask questions (answered from your live context), and leave anchored feedback that you then rework in a single batch. Triggers whenever you have just produced a reviewable .md artifact and want the user to review it before you continue.
+description: Open a generated markdown plan/document in the live Plan Review viewer for interactive review. Use this right after you write or substantially revise a markdown plan, design doc, spec, or report file that the user should review — it lets them read it formatted, select lines to ask questions (answered from your live context), and leave anchored feedback that you then rework in a single batch. Triggers whenever you have just produced a reviewable .md artifact and want the user to review it before you continue. Also triggers when finishing plan mode (before or instead of ExitPlanMode): write the plan to a .md file and open it here for interactive review rather than presenting it inline.
 ---
 
 # Plan Review

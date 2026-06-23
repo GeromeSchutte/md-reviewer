@@ -8,6 +8,8 @@ export const storePath = (): string => join(dataDir(), "store.sqlite");
 export const pidfilePath = (): string => join(dataDir(), "broker.pid");
 export const logOutPath = (): string => join(dataDir(), "broker.out.log");
 export const logErrPath = (): string => join(dataDir(), "broker.err.log");
+/** Structured (pino JSON) event log. */
+export const brokerLogPath = (): string => join(dataDir(), "broker.log");
 
 export const LAUNCH_AGENT_LABEL = "ai.plan-review.broker";
 export const launchAgentPlistPath = (): string =>

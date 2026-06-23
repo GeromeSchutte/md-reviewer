@@ -28,9 +28,12 @@ describe("file watcher -> live doc push", () => {
     broker.subscribe(sid, client);
     events.length = 0; // drop initial snapshot
 
-    await Bun.write(path, "# edited out of band\n");
-    // Poll (robust under CPU load / fsevents backlog) instead of a single fixed sleep.
-    for (let i = 0; i < 100 && !events.some((e) => e.type === "doc"); i++) await sleep(50);
+    // Re-write each poll iteration: fsevents can coalesce/drop a lone change under
+    // CPU load, so retrying the write makes the watcher assertion deterministic.
+    for (let i = 0; i < 100 && !events.some((e) => e.type === "doc"); i++) {
+      await Bun.write(path, `# edited out of band (${i})\n`);
+      await sleep(50);
+    }
 
     const doc = events.find((e) => e.type === "doc");
     expect(doc).toBeDefined();

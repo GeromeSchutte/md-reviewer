@@ -34,6 +34,19 @@ bun run packages/cli/src/index.ts install     # writes ~/Library/LaunchAgents/ai
 bun run packages/cli/src/index.ts status
 ```
 
+After changing broker code, reload the running daemon: `bun run packages/cli/src/index.ts restart`.
+
+### Watching the daemon
+
+The broker logs every event (session open, attach, question queued→answered/error, feedback, finalize→rework, spawn lifecycle, disconnects) as structured JSON via pino:
+
+```sh
+tail -f ~/.plan-review/broker.log | bunx pino-pretty   # structured events, pretty
+tail -f ~/.plan-review/broker.out.log                  # raw stdout (startup, crashes)
+```
+
+Set `PLAN_REVIEW_LOG_LEVEL=debug` (or `silent`) to adjust verbosity.
+
 ### Install the skill (for agent-initiated reviews)
 
 Symlink the skill into Claude Code's skills directory:
@@ -65,5 +78,3 @@ bun test                                  # broker unit + HTTP + watcher + spawn
 bunx tsc --noEmit -p packages/broker/tsconfig.json
 cd apps/viewer && bun run build           # typecheck + vite build
 ```
-
-After changing broker code, reload the daemon: `bun run packages/cli/src/index.ts restart`.

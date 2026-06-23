@@ -20,6 +20,17 @@
         "hono": "^4.12.27",
       },
     },
+    "packages/cli": {
+      "name": "@plan-review/cli",
+      "version": "0.0.0",
+      "bin": {
+        "plan-review": "src/index.ts",
+      },
+      "dependencies": {
+        "@plan-review/broker": "workspace:*",
+        "@plan-review/shared": "workspace:*",
+      },
+    },
     "packages/shared": {
       "name": "@plan-review/shared",
       "version": "0.0.0",
@@ -30,6 +41,8 @@
   },
   "packages": {
     "@plan-review/broker": ["@plan-review/broker@workspace:packages/broker"],
+
+    "@plan-review/cli": ["@plan-review/cli@workspace:packages/cli"],
 
     "@plan-review/shared": ["@plan-review/shared@workspace:packages/shared"],
 

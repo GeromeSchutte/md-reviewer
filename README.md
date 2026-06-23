@@ -78,6 +78,34 @@ bun run packages/cli/src/index.ts open path/to/plan.md
 
 (In dev/browser you can also pass `?path=/abs/plan.md` or `?session=<sid>` on the Vite URL.)
 
+### Iterate on the UI in a browser (no Tauri rebuild)
+
+The viewer is a plain Vite + React app, so you can develop the UI in a browser with
+hot reload instead of rebuilding the Tauri binary. The broker speaks plain HTTP/SSE
+(CORS enabled), and `resolveSession` falls back to query params outside Tauri.
+
+```sh
+bun run broker                              # daemon (or `... status` if already installed)
+cd apps/viewer && bun run dev               # Vite dev server on :5173
+# open http://localhost:5173/?path=/abs/plan.md   ← live broker + a real plan
+```
+
+For **pure-UI work with no backend at all**, append `?mock`: this swaps the broker for
+an in-memory fixture (sample plan + Q&A in every status + feedback), so the whole UI —
+dark theme, shadcn components, dialogs — renders instantly with full HMR and no broker,
+agent, or session.
+
+```sh
+cd apps/viewer && bun run dev
+# open http://localhost:5173/?mock
+```
+
+The viewer is **dark-mode only** (`<html class="dark">`) and built on
+[shadcn/ui](https://ui.shadcn.com) over Tailwind v4. Design tokens live in
+`src/index.css`; add more components with `bunx shadcn@latest add <name>` from
+`apps/viewer`. The `?mock` fixture is dev-only (gated on `import.meta.env.DEV`) and is
+never bundled into the release/Tauri build.
+
 ## Develop
 
 ```sh

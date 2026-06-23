@@ -58,10 +58,17 @@ ln -s "$PWD/skills/plan-review" ~/.claude/skills/plan-review
 ### Run the viewer
 
 ```sh
-cd apps/viewer && bun run tauri dev      # dev (hot reload)
-# or build a desktop app:
-cd apps/viewer && bun run tauri build
+# Build the standalone viewer once (embeds the frontend; this is what `open` launches):
+cd apps/viewer && bun run tauri build --no-bundle
+# …or for development with hot reload:
+cd apps/viewer && bun run tauri dev
 ```
+
+> The **debug** build (`cargo build` / `tauri dev`) loads the Vite dev server at
+> `localhost:5173`, so it shows a blank window unless that server is running.
+> `plan-review open` only launches a **release** build, which serves the embedded
+> frontend standalone — build it with `tauri build --no-bundle` (produces
+> `apps/viewer/src-tauri/target/release/app`).
 
 To open a specific plan, the CLI sets `PLAN_REVIEW_SESSION`/`PLAN_REVIEW_PATH` for the viewer binary:
 

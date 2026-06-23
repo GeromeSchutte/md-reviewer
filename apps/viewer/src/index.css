@@ -104,7 +104,8 @@ body,
 }
 
 body {
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: "Source Sans 3 Variable", ui-sans-serif, system-ui,
+    -apple-system, "Segoe UI", sans-serif;
   font-weight: 350;
   line-height: 1.4;
 }

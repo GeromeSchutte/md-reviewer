@@ -10,6 +10,7 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@fontsource-variable/source-sans-3": "^5.2.9",
     "@plan-review/shared": "workspace:*",
     "@tauri-apps/api": "^2.11.1",
     "class-variance-authority": "^0.7.1",

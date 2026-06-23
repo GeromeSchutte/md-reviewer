@@ -166,13 +166,6 @@ body {
   }
 }
 
-/* Highlight for the source lines an active selection/anchor maps to — the
-   amber pencil, tying gutter → band → sidebar → document into one accent. */
-[data-anchor-active="true"] {
-  background-color: color-mix(in oklch, var(--marker) 22%, transparent);
-  box-shadow: inset 2px 0 0 var(--marker);
-}
-
 /* ── Document & answer typography ──────────────────────────────────────── */
 .md-body {
   font-size: 1.0625rem; /* ~17px reading size */

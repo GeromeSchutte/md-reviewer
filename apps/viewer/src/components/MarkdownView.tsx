@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Plus } from "lucide-react";
@@ -93,16 +93,35 @@ function bandForRange(blocks: Block[], start: number, end: number, containerTop:
 
 export function MarkdownView({
   markdown,
+  activeAnchor,
   onSubmit,
 }: {
   markdown: string;
+  activeAnchor: Anchor | null;
   onSubmit: (anchor: Anchor, text: string, mode: ComposerMode) => void | Promise<void>;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<Band | null>(null);
   const [sel, setSel] = useState<Band | null>(null);
+  const [anchorBand, setAnchorBand] = useState<Band | null>(null);
   const [open, setOpen] = useState(false);
   const dragging = useRef(false);
+
+  // Externally-driven highlight (a hovered sidebar card) → the same band as a
+  // live selection, so the two read identically instead of inner-vs-outer.
+  useLayoutEffect(() => {
+    const container = ref.current;
+    if (!container || !activeAnchor) return setAnchorBand(null);
+    const { startLine, endLine } = activeAnchor.lineRange;
+    const compute = () => {
+      const blocks = measureBlocks(container);
+      const top = container.getBoundingClientRect().top;
+      setAnchorBand(bandForRange(blocks, startLine, endLine, top));
+    };
+    compute();
+    window.addEventListener("resize", compute);
+    return () => window.removeEventListener("resize", compute);
+  }, [activeAnchor, markdown]);
 
   const close = useCallback(() => {
     setOpen(false);
@@ -175,11 +194,12 @@ export function MarkdownView({
       onMouseMove={onMouseMove}
       onMouseLeave={() => !dragging.current && setHover(null)}
     >
-      {/* selection highlight band (behind the text) — the amber pencil */}
-      {sel && (
+      {/* highlight band (behind the text) — the amber pencil. Same band for a
+          live selection and for a hovered sidebar card's anchor. */}
+      {(sel ?? anchorBand) && (
         <div
           className="pointer-events-none absolute inset-x-0 rounded-sm bg-[color-mix(in_oklch,var(--marker)_18%,transparent)] shadow-[inset_2px_0_0_var(--marker)]"
-          style={{ top: sel.top, height: sel.height }}
+          style={{ top: (sel ?? anchorBand)!.top, height: (sel ?? anchorBand)!.height }}
         />
       )}
 

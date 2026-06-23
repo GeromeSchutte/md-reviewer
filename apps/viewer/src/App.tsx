@@ -51,6 +51,8 @@ export default function App() {
   const [reviewNote, setReviewNote] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mainEl, setMainEl] = useState<HTMLElement | null>(null);
+  // Anchor of the sidebar card currently hovered/focused — drives the in-doc band.
+  const [activeAnchor, setActiveAnchor] = useState<Anchor | null>(null);
 
   // --- bootstrap session ---
   useEffect(() => {
@@ -239,7 +241,7 @@ export default function App() {
 
         {/* document */}
         <main ref={setMainEl} className="min-w-0 flex-1 overflow-auto">
-          <MarkdownView markdown={markdown} onSubmit={submitAnnotation} />
+          <MarkdownView markdown={markdown} activeAnchor={activeAnchor} onSubmit={submitAnnotation} />
         </main>
 
         {/* sidebar — width animates between open and collapsed */}
@@ -268,7 +270,7 @@ export default function App() {
               </div>
               <TabsContent value="review" className="flex min-h-0 flex-col">
                 <div className="min-h-0 flex-1 overflow-auto p-3">
-                  <ReviewList sid={sid} feedback={feedback} />
+                  <ReviewList sid={sid} feedback={feedback} onHover={setActiveAnchor} />
                 </div>
                 <ReviewBar
                   sid={sid}
@@ -281,7 +283,7 @@ export default function App() {
               </TabsContent>
               <TabsContent value="qa" className="min-h-0">
                 <div className="h-full overflow-auto p-3">
-                  <QAList sid={sid} questions={questions} />
+                  <QAList sid={sid} questions={questions} onHover={setActiveAnchor} />
                 </div>
               </TabsContent>
             </Tabs>
@@ -400,7 +402,15 @@ function ReviewBar({
   );
 }
 
-function QAList({ sid, questions }: { sid: string; questions: QuestionRecord[] }) {
+function QAList({
+  sid,
+  questions,
+  onHover,
+}: {
+  sid: string;
+  questions: QuestionRecord[];
+  onHover: (anchor: Anchor | null) => void;
+}) {
   if (questions.length === 0)
     return (
       <Empty icon={MessageSquareText} title="No questions yet">
@@ -410,7 +420,17 @@ function QAList({ sid, questions }: { sid: string; questions: QuestionRecord[] }
   return (
     <ul className="space-y-2.5">
       {[...questions].reverse().map((q) => (
-        <li key={q.id} className="rounded-lg border border-border bg-card p-3 text-sm shadow-xs">
+        <li
+          key={q.id}
+          onMouseEnter={() => onHover(q.anchor)}
+          onMouseLeave={() => onHover(null)}
+          onFocus={() => onHover(q.anchor)}
+          onBlur={() => onHover(null)}
+          className={cn(
+            "rounded-lg border border-border bg-card p-3 text-sm shadow-xs transition-colors",
+            q.anchor && "hover:border-marker/40",
+          )}
+        >
           <div className="mb-2 flex items-center gap-2">
             <QStatus status={q.status} />
             <div className="ml-auto flex items-center gap-1.5">
@@ -437,7 +457,15 @@ function QAList({ sid, questions }: { sid: string; questions: QuestionRecord[] }
   );
 }
 
-function ReviewList({ sid, feedback }: { sid: string; feedback: FeedbackRecord[] }) {
+function ReviewList({
+  sid,
+  feedback,
+  onHover,
+}: {
+  sid: string;
+  feedback: FeedbackRecord[];
+  onHover: (anchor: Anchor | null) => void;
+}) {
   const active = feedback.filter((f) => f.status === "queued" || f.status === "submitted");
   if (active.length === 0)
     return (
@@ -452,9 +480,14 @@ function ReviewList({ sid, feedback }: { sid: string; feedback: FeedbackRecord[]
         return (
           <li
             key={f.id}
+            onMouseEnter={() => onHover(f.anchor)}
+            onMouseLeave={() => onHover(null)}
+            onFocus={() => onHover(f.anchor)}
+            onBlur={() => onHover(null)}
             className={cn(
-              "rounded-lg border border-border bg-card p-3 text-sm shadow-xs",
+              "rounded-lg border border-border bg-card p-3 text-sm shadow-xs transition-colors",
               queued && "border-l-2 border-l-marker",
+              f.anchor && "hover:border-marker/40",
             )}
           >
             <div className="mb-2 flex items-center gap-2">

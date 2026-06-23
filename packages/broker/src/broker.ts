@@ -10,6 +10,7 @@ import type {
   ServerEvent,
 } from "@plan-review/shared";
 import { Store } from "./store";
+import { silentLogger, type Logger } from "./logger";
 
 export interface SSEClient {
   send: (event: ServerEvent) => void;
@@ -47,6 +48,8 @@ export interface BrokerOptions {
   spawnAgent?: (info: { sid: string; abspath: string; title: string }) => void;
   /** Start watching a plan file for live updates when its session first opens. */
   onSessionOpened?: (abspath: string) => void;
+  /** Structured logger; defaults to silent so tests/embeddings don't write to disk. */
+  log?: Logger;
 }
 
 const hash = (s: string): string => Bun.hash(s).toString(16);
@@ -58,6 +61,7 @@ export class Broker {
   private readonly version: string;
   private readonly spawnAgent?: BrokerOptions["spawnAgent"];
   private readonly onSessionOpened?: BrokerOptions["onSessionOpened"];
+  private readonly log: Logger;
   private readonly sessions = new Map<string, Session>();
   private readonly byPath = new Map<string, string>(); // abspath -> sid
 
@@ -68,6 +72,7 @@ export class Broker {
     this.version = opts.version ?? "0.0.0";
     this.spawnAgent = opts.spawnAgent;
     this.onSessionOpened = opts.onSessionOpened;
+    this.log = opts.log ?? silentLogger;
   }
 
   get sessionCount(): number {
@@ -114,6 +119,7 @@ export class Broker {
     this.sessions.set(session.sid, session);
     this.byPath.set(abspath, session.sid);
 
+    this.log.info({ event: "session.open", sid: session.sid, abspath, expectAgent: !!opts.expectAgent }, "session opened");
     this.onSessionOpened?.(abspath);
     // User-initiated path only: bring up a headless agent. When expectAgent is set,
     // the caller will attach as the agent, so spawning one would be a duplicate.
@@ -132,6 +138,7 @@ export class Broker {
     for (const id of requeued) this.broadcast(s, { type: "qa-status", id, status: "queued" });
     if (s.state === "no-agent" || s.state === "agent-disconnected") this.setState(s, "waiting-for-review");
     this.refreshQuestionState(s);
+    this.log.info({ event: "agent.attach", sid, source, requeued: requeued.length }, "agent attached");
     return s.state;
   }
 
@@ -214,6 +221,7 @@ export class Broker {
     this.broadcast(s, { type: "qa-status", id, status: "queued" });
     this.refreshQuestionState(s);
     this.wake(s);
+    this.log.info({ event: "question.created", sid, qid: id, anchored: !!anchor }, "question queued");
     return id;
   }
 
@@ -236,11 +244,13 @@ export class Broker {
     if (payload.error !== undefined) {
       this.store.recordError(questionId, payload.error, s.agentSource);
       this.broadcast(s, { type: "qa-status", id: questionId, status: "error", error: payload.error });
+      this.log.warn({ event: "question.error", sid, qid: questionId, error: payload.error }, "question errored");
     } else {
       const md = payload.markdown ?? "";
       this.store.recordAnswer(questionId, md, Date.now(), s.agentSource);
       this.broadcast(s, { type: "answer", questionId, markdown: md });
       this.broadcast(s, { type: "qa-status", id: questionId, status: "answered" });
+      this.log.info({ event: "question.answered", sid, qid: questionId, chars: md.length }, "question answered");
     }
     this.refreshQuestionState(s);
   }
@@ -262,6 +272,7 @@ export class Broker {
     };
     this.store.insertFeedback(record);
     this.broadcast(s, { type: "feedback-ack", feedback: record });
+    this.log.info({ event: "feedback.created", sid, fid: id, anchored: !!anchor }, "feedback added");
     return id;
   }
 
@@ -296,6 +307,7 @@ export class Broker {
     s.pendingControl.push({ type: "finalize", batch, reviewNote: reviewNote ?? null });
     this.setState(s, "reworking");
     this.wake(s);
+    this.log.info({ event: "review.finalized", sid, items: batch.length, hasNote: !!reviewNote }, "review submitted");
   }
 
   reworkDone(sid: string, ok: boolean, error?: string): void {
@@ -306,6 +318,7 @@ export class Broker {
     } else {
       this.setState(s, "waiting-for-review", { reworkResult: "error", message: error });
     }
+    this.log.info({ event: "rework.done", sid, ok, error }, "rework finished");
   }
 
   end(sid: string): void {
@@ -313,6 +326,7 @@ export class Broker {
     s.pendingControl.push({ type: "end" });
     this.setState(s, "finalized");
     this.wake(s);
+    this.log.info({ event: "session.end", sid }, "session ended");
   }
 
   // ---- doc updates (called by the file watcher) --------------------------
@@ -326,6 +340,7 @@ export class Broker {
     s.docMarkdown = markdown;
     s.docVersion = version;
     this.broadcast(s, { type: "doc", markdown, version });
+    this.log.info({ event: "doc.updated", sid: s.sid, version }, "plan file changed");
   }
 
   // ---- SSE subscription --------------------------------------------------
@@ -362,6 +377,7 @@ export class Broker {
         this.store.listQuestionsByStatus(s.abspath, "queued").length +
         this.store.listQuestionsByStatus(s.abspath, "in-progress").length;
       if (pending > 0) return; // still has work; let it finish
+      this.log.info({ event: "guard.end", sid: s.sid }, "viewer gone past grace; ending agent");
       this.end(s.sid);
     }, this.disconnectGraceMs);
   }

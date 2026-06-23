@@ -1,7 +1,99 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
+@custom-variant dark (&:is(.dark *));
+
+/* shadcn/ui design tokens (neutral base). The app is pinned to dark via
+   <html class="dark"> in index.html, but :root keeps a working light palette so
+   a toggle is a one-line change later. */
 :root {
-  color-scheme: light dark;
+  --radius: 0.625rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --success: oklch(0.6 0.13 150);
+  --warning: oklch(0.7 0.15 75);
+  --info: oklch(0.55 0.18 255);
+  --link: oklch(0.52 0.18 255);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+}
+
+.dark {
+  color-scheme: dark;
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --success: oklch(0.72 0.15 150);
+  --warning: oklch(0.8 0.15 80);
+  --info: oklch(0.72 0.15 255);
+  --link: oklch(0.72 0.15 255);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+}
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
+  --color-link: var(--link);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
 }
 
 html,
@@ -17,16 +109,7 @@ body {
 
 /* Highlight for the source lines an active selection/anchor maps to. */
 [data-anchor-active="true"] {
-  background-color: rgb(254 240 138 / 0.5);
-}
-
-@layer components {
-  .btn {
-    @apply rounded border border-gray-300 px-2 py-1 text-sm hover:bg-gray-50 disabled:opacity-50;
-  }
-  .btn-primary {
-    @apply rounded bg-blue-600 px-3 py-1 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50;
-  }
+  background-color: color-mix(in oklch, var(--warning) 30%, transparent);
 }
 
 /* Minimal markdown typography for the rendered document and answers. */
@@ -66,13 +149,13 @@ body {
   margin: 0.2rem 0;
 }
 .md-body code {
-  background: rgb(0 0 0 / 0.06);
+  background: var(--muted);
   padding: 0.1rem 0.3rem;
   border-radius: 0.25rem;
   font-size: 0.9em;
 }
 .md-body pre {
-  background: rgb(0 0 0 / 0.06);
+  background: var(--muted);
   padding: 0.75rem;
   border-radius: 0.4rem;
   overflow-x: auto;
@@ -83,13 +166,13 @@ body {
   padding: 0;
 }
 .md-body blockquote {
-  border-left: 3px solid rgb(0 0 0 / 0.15);
+  border-left: 3px solid var(--border);
   padding-left: 0.8rem;
-  color: rgb(0 0 0 / 0.6);
+  color: var(--muted-foreground);
   margin: 0.6rem 0;
 }
 .md-body a {
-  color: rgb(37 99 235);
+  color: var(--link);
   text-decoration: underline;
 }
 .md-body table {
@@ -98,9 +181,9 @@ body {
 }
 .md-body th,
 .md-body td {
-  border: 1px solid rgb(0 0 0 / 0.15);
+  border: 1px solid var(--border);
   padding: 0.3rem 0.6rem;
 }
 .md-body ::selection {
-  background: rgb(191 219 254);
+  background: color-mix(in oklch, var(--link) 35%, transparent);
 }

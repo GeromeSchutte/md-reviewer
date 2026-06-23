@@ -103,8 +103,9 @@ cd apps/viewer && bun run dev
 The viewer is **dark-mode only** (`<html class="dark">`) and built on
 [shadcn/ui](https://ui.shadcn.com) over Tailwind v4. Design tokens live in
 `src/index.css`; add more components with `bunx shadcn@latest add <name>` from
-`apps/viewer`. The `?mock` fixture is dev-only (gated on `import.meta.env.DEV`) and is
-never bundled into the release/Tauri build.
+`apps/viewer`. The `?mock` fixture is gated on `import.meta.env.DEV`, so it never
+activates in the release/Tauri build (where `DEV` is `false`), regardless of the query
+string — the fixture code is inert there, not stripped from the bundle.
 
 ## Develop
 

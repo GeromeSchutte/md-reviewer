@@ -5,6 +5,7 @@ import { Plus } from "lucide-react";
 import { Popover } from "radix-ui";
 import type { Anchor } from "@plan-review/shared";
 import { anchorLabel, buildAnchor } from "../selection";
+import { nodeText, slugify } from "../toc";
 import { ComposerBody, type ComposerMode } from "./Composer";
 
 interface HastNode {
@@ -16,12 +17,14 @@ const endLine = (node: unknown): number | undefined => (node as HastNode | undef
 // Stamp each block element with its full source line range so DOM geometry maps
 // back to source lines for gutter selection.
 const stamp = (node: unknown) => ({ "data-source-line": startLine(node), "data-source-end": endLine(node) });
+// id derived via the same slug the TOC uses, so contents/scroll-spy line up.
+const hid = (children: React.ReactNode) => slugify(nodeText(children));
 const components: Components = {
   p: ({ node, ...props }) => <p {...stamp(node)} {...props} />,
   li: ({ node, ...props }) => <li {...stamp(node)} {...props} />,
-  h1: ({ node, ...props }) => <h1 {...stamp(node)} {...props} />,
-  h2: ({ node, ...props }) => <h2 {...stamp(node)} {...props} />,
-  h3: ({ node, ...props }) => <h3 {...stamp(node)} {...props} />,
+  h1: ({ node, children, ...props }) => <h1 id={hid(children)} {...stamp(node)} {...props}>{children}</h1>,
+  h2: ({ node, children, ...props }) => <h2 id={hid(children)} {...stamp(node)} {...props}>{children}</h2>,
+  h3: ({ node, children, ...props }) => <h3 id={hid(children)} {...stamp(node)} {...props}>{children}</h3>,
   h4: ({ node, ...props }) => <h4 {...stamp(node)} {...props} />,
   h5: ({ node, ...props }) => <h5 {...stamp(node)} {...props} />,
   h6: ({ node, ...props }) => <h6 {...stamp(node)} {...props} />,

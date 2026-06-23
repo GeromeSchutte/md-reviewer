@@ -136,6 +136,8 @@ export default function App() {
 
   const meta = STATE_META[state];
   const queuedFeedback = useMemo(() => feedback.filter((f) => f.status === "queued"), [feedback]);
+  const toc = useMemo(() => parseToc(markdown), [markdown]);
+  const activeId = useScrollSpy(mainEl, useMemo(() => toc.map((t) => t.id), [toc]));
 
   if (bootError) return <Centered>{bootError}</Centered>;
   if (!sid) return <Centered>Connecting…</Centered>;

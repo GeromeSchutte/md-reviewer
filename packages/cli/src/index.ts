@@ -1,5 +1,7 @@
 #!/usr/bin/env bun
-import { resolve as resolvePath } from "node:path";
+import { resolve as resolvePath, dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { existsSync } from "node:fs";
 import type { AgentSource } from "@plan-review/shared";
 import {
   installDaemon,
@@ -56,16 +58,37 @@ async function ensureBroker(): Promise<void> {
   throw new Error("broker did not come up; try `plan-review install`");
 }
 
+function repoRoot(): string {
+  // packages/cli/src/index.ts -> repo root is three levels up.
+  return join(dirname(fileURLToPath(import.meta.url)), "../../..");
+}
+
+/** Find the built Tauri viewer binary, preferring a release bundle, then the debug build. */
+function findViewerBinary(): string | undefined {
+  const root = repoRoot();
+  const candidates = [
+    process.env.PLAN_REVIEW_VIEWER_BIN,
+    join(root, "apps/viewer/src-tauri/target/release/bundle/macos/plan-review.app/Contents/MacOS/plan-review"),
+    join(root, "apps/viewer/src-tauri/target/release/app"),
+    join(root, "apps/viewer/src-tauri/target/debug/app"),
+  ].filter((p): p is string => !!p);
+  return candidates.find((p) => existsSync(p));
+}
+
 function launchViewer(sid: string, abspath: string): void {
-  const bin = process.env.PLAN_REVIEW_VIEWER_BIN;
+  const bin = findViewerBinary();
   if (bin) {
-    const proc = Bun.spawn([bin], { env: { ...process.env, PLAN_REVIEW_SESSION: sid }, stdout: "ignore", stderr: "ignore" });
+    const proc = Bun.spawn([bin], {
+      env: { ...process.env, PLAN_REVIEW_SESSION: sid, PLAN_REVIEW_PATH: abspath },
+      stdout: "ignore",
+      stderr: "ignore",
+    });
     proc.unref();
     console.log(`opened viewer for session ${sid}`);
   } else {
-    // The Tauri viewer (task #7) will be launched here once built.
-    console.log(`session ${sid} ready for ${abspath}`);
-    console.log(`(set PLAN_REVIEW_VIEWER_BIN to auto-launch the viewer; broker at ${baseUrl()})`);
+    console.log(`session ${sid} ready for ${abspath} (broker at ${baseUrl()})`);
+    console.log("no viewer binary found — build it with `cd apps/viewer && bun run tauri build`,");
+    console.log("or run `cd apps/viewer && bun run tauri dev` and open `?session=" + sid + "`.");
   }
 }
 

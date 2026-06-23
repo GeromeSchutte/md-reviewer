@@ -1,4 +1,5 @@
 import { createSession } from "./broker";
+import { isMock } from "./mock";
 
 interface LaunchTarget {
   session: string | null;
@@ -12,6 +13,7 @@ interface LaunchTarget {
  * session via the broker.
  */
 export async function resolveSession(): Promise<string | null> {
+  if (isMock()) return "mock";
   const params = new URLSearchParams(location.search);
   if (params.get("session")) return params.get("session");
   let path = params.get("path");

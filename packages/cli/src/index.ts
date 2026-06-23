@@ -104,7 +104,11 @@ async function main(): Promise<void> {
       await ensureBroker();
       const abspath = resolvePath(process.cwd(), path);
       const { sid } = await createSession(abspath);
-      launchViewer(sid, abspath);
+      if (flags.json) {
+        console.log(JSON.stringify({ sid, abspath }));
+      } else {
+        launchViewer(sid, abspath);
+      }
       return;
     }
 

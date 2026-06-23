@@ -79,8 +79,12 @@ export class Broker {
 
   // ---- session lifecycle -------------------------------------------------
 
-  /** Open (or reuse) a session for a plan file. Spawns an agent if none is attached. */
-  async openSession(planPath: string): Promise<{ sid: string; state: LifecycleState }> {
+  /**
+   * Open (or reuse) a session for a plan file. Spawns a headless agent unless
+   * `expectAgent` is set (the caller is an agent that will attach itself, e.g.
+   * the agent-initiated `open --json` flow), which would otherwise double up.
+   */
+  async openSession(planPath: string, opts: { expectAgent?: boolean } = {}): Promise<{ sid: string; state: LifecycleState }> {
     const abspath = resolvePath(planPath);
     const existingSid = this.byPath.get(abspath);
     if (existingSid) {
@@ -111,8 +115,9 @@ export class Broker {
     this.byPath.set(abspath, session.sid);
 
     this.onSessionOpened?.(abspath);
-    // No agent yet: ask the spawner to bring one up (user-initiated path).
-    this.spawnAgent?.({ sid: session.sid, abspath, title });
+    // User-initiated path only: bring up a headless agent. When expectAgent is set,
+    // the caller will attach as the agent, so spawning one would be a duplicate.
+    if (!opts.expectAgent) this.spawnAgent?.({ sid: session.sid, abspath, title });
 
     return { sid: session.sid, state: session.state };
   }

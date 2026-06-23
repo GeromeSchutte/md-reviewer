@@ -35,8 +35,8 @@ export async function health(): Promise<HealthResponse | null> {
   }
 }
 
-export async function createSession(planPath: string): Promise<CreateSessionResponse> {
-  return CreateSessionResponse.parse(await postJson(routes.sessions, { planPath }));
+export async function createSession(planPath: string, expectAgent = false): Promise<CreateSessionResponse> {
+  return CreateSessionResponse.parse(await postJson(routes.sessions, { planPath, expectAgent }));
 }
 
 export async function attach(sid: string, planPath: string, source: AgentSource): Promise<AttachResponse> {

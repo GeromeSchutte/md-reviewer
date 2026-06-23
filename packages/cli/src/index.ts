@@ -103,12 +103,11 @@ async function main(): Promise<void> {
       if (!path) throw new Error("usage: plan-review open <plan.md>");
       await ensureBroker();
       const abspath = resolvePath(process.cwd(), path);
-      const { sid } = await createSession(abspath);
-      if (flags.json) {
-        console.log(JSON.stringify({ sid, abspath }));
-      } else {
-        launchViewer(sid, abspath);
-      }
+      // --json => the calling agent will attach itself (agent-initiated): suppress auto-spawn.
+      const agentInitiated = !!flags.json;
+      const { sid } = await createSession(abspath, agentInitiated);
+      launchViewer(sid, abspath);
+      if (agentInitiated) console.log(JSON.stringify({ sid, abspath }));
       return;
     }
 

@@ -51,8 +51,11 @@ export type ReworkDoneRequest = z.infer<typeof ReworkDoneRequest>;
 // Viewer-side endpoints
 // ---------------------------------------------------------------------------
 
-/** POST /sessions */
-export const CreateSessionRequest = z.object({ planPath: z.string() });
+/** POST /sessions. `expectAgent` = the caller (an agent) will attach itself, so the broker must NOT auto-spawn one. */
+export const CreateSessionRequest = z.object({
+  planPath: z.string(),
+  expectAgent: z.boolean().optional(),
+});
 export type CreateSessionRequest = z.infer<typeof CreateSessionRequest>;
 
 export const CreateSessionResponse = z.object({

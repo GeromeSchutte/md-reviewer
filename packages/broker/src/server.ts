@@ -26,8 +26,8 @@ export function createServer(broker: Broker): Hono {
 
   // ---- viewer-side ----
   app.post("/sessions", async (c) => {
-    const { planPath } = CreateSessionRequest.parse(await c.req.json());
-    const { sid, state } = await broker.openSession(planPath);
+    const { planPath, expectAgent } = CreateSessionRequest.parse(await c.req.json());
+    const { sid, state } = await broker.openSession(planPath, { expectAgent });
     return c.json({ sid, state });
   });
 

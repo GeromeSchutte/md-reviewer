@@ -171,14 +171,14 @@ export function MarkdownView({
   return (
     <div
       ref={ref}
-      className="md-body relative mx-auto max-w-3xl py-10 pr-8 pl-12"
+      className="md-body relative mx-auto max-w-3xl py-14 pr-10 pl-14"
       onMouseMove={onMouseMove}
       onMouseLeave={() => !dragging.current && setHover(null)}
     >
-      {/* selection highlight band (behind the text) */}
+      {/* selection highlight band (behind the text) — the amber pencil */}
       {sel && (
         <div
-          className="pointer-events-none absolute inset-x-0 rounded-sm bg-[color-mix(in_oklch,var(--warning)_22%,transparent)]"
+          className="pointer-events-none absolute inset-x-0 rounded-sm bg-[color-mix(in_oklch,var(--marker)_18%,transparent)] shadow-[inset_2px_0_0_var(--marker)]"
           style={{ top: sel.top, height: sel.height }}
         />
       )}
@@ -187,8 +187,8 @@ export function MarkdownView({
       <div className="absolute inset-y-0 left-0 z-20 w-12 cursor-pointer" onMouseDown={onGutterDown}>
         {plus && (
           <span
-            className="absolute left-2 flex size-6 items-center justify-center rounded-md border border-border bg-popover text-muted-foreground shadow-sm transition-colors hover:border-ring hover:text-foreground"
-            style={{ top: hover.top }}
+            className="absolute left-3 flex size-6 -translate-y-1/2 items-center justify-center rounded-md border border-border bg-popover text-muted-foreground shadow-sm transition-colors hover:border-marker hover:text-marker"
+            style={{ top: hover.top + hover.height / 2 }}
           >
             <Plus className="size-4" />
           </span>

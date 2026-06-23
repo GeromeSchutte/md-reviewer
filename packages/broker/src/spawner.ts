@@ -3,6 +3,7 @@ import { dirname, join, resolve as resolvePath } from "node:path";
 import { readFileSync, existsSync } from "node:fs";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { Store } from "./store";
+import { silentLogger, type Logger } from "./logger";
 
 export interface SpawnInfo {
   sid: string;
@@ -63,11 +64,13 @@ export function buildSeed(deps: { store: Store; baseUrl: string }, info: SpawnIn
   ].join("\n");
 }
 
-export function makeSpawner(deps: { store: Store; baseUrl: string }): Spawner {
+export function makeSpawner(deps: { store: Store; baseUrl: string; log?: Logger }): Spawner {
   const skill = skillBody();
+  const log = deps.log ?? silentLogger;
 
   return (info: SpawnInfo) => {
     const seed = buildSeed(deps, info);
+    log.info({ event: "spawn.start", sid: info.sid, abspath: info.abspath }, "spawning headless agent");
 
     void (async () => {
       try {
@@ -85,11 +88,11 @@ export function makeSpawner(deps: { store: Store; baseUrl: string }): Spawner {
         });
         for await (const message of q) {
           if (message.type === "result") {
-            console.log(`[spawner] session ${info.sid} agent ended (${message.subtype})`);
+            log.info({ event: "spawn.end", sid: info.sid, subtype: message.subtype }, "agent ended");
           }
         }
       } catch (err) {
-        console.error(`[spawner] session ${info.sid} agent error:`, err instanceof Error ? err.message : err);
+        log.error({ event: "spawn.error", sid: info.sid, err: err instanceof Error ? err.message : String(err) }, "agent error");
       }
     })();
   };

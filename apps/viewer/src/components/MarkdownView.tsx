@@ -168,7 +168,7 @@ export function MarkdownView({
   return (
     <div
       ref={ref}
-      className="md-body relative mx-auto max-w-3xl py-6 pr-8 pl-12"
+      className="md-body relative mx-auto max-w-3xl py-10 pr-8 pl-12"
       onMouseMove={onMouseMove}
       onMouseLeave={() => !dragging.current && setHover(null)}
     >

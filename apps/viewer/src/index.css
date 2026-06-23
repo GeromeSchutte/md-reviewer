@@ -104,10 +104,10 @@ body,
 }
 
 body {
-  font-family: "Source Sans 3 Variable", ui-sans-serif, system-ui,
+  font-family: "Noto Sans Variable", ui-sans-serif, system-ui,
     -apple-system, "Segoe UI", sans-serif;
   font-weight: 350;
-  line-height: 1.4;
+  line-height: 1.6;
 }
 
 /* Highlight for the source lines an active selection/anchor maps to. */
@@ -117,30 +117,30 @@ body {
 
 /* Minimal markdown typography for the rendered document and answers. */
 .md-body {
-  line-height: 1.65;
+  line-height: 1.6;
 }
 .md-body h1 {
   font-size: 1.6rem;
   font-weight: 700;
-  margin: 1.2rem 0 0.6rem;
+  margin: 2rem 0 1rem;
 }
 .md-body h2 {
   font-size: 1.3rem;
   font-weight: 700;
-  margin: 1.1rem 0 0.5rem;
+  margin: 1.8rem 0 0.8rem;
 }
 .md-body h3 {
   font-size: 1.1rem;
   font-weight: 600;
-  margin: 1rem 0 0.4rem;
+  margin: 1.5rem 0 0.6rem;
 }
 .md-body p {
-  margin: 0.6rem 0;
+  margin: 1rem 0;
 }
 .md-body ul,
 .md-body ol {
-  margin: 0.6rem 0;
-  padding-left: 1.4rem;
+  margin: 1rem 0;
+  padding-left: 1.6rem;
 }
 .md-body ul {
   list-style: disc;
@@ -149,7 +149,7 @@ body {
   list-style: decimal;
 }
 .md-body li {
-  margin: 0.2rem 0;
+  margin: 0.4rem 0;
 }
 .md-body code {
   background: var(--muted);
@@ -159,10 +159,10 @@ body {
 }
 .md-body pre {
   background: var(--muted);
-  padding: 0.75rem;
+  padding: 0.9rem;
   border-radius: 0.4rem;
   overflow-x: auto;
-  margin: 0.6rem 0;
+  margin: 1rem 0;
 }
 .md-body pre code {
   background: none;
@@ -170,9 +170,9 @@ body {
 }
 .md-body blockquote {
   border-left: 3px solid var(--border);
-  padding-left: 0.8rem;
+  padding-left: 1rem;
   color: var(--muted-foreground);
-  margin: 0.6rem 0;
+  margin: 1rem 0;
 }
 .md-body a {
   color: var(--link);
@@ -180,12 +180,12 @@ body {
 }
 .md-body table {
   border-collapse: collapse;
-  margin: 0.6rem 0;
+  margin: 1rem 0;
 }
 .md-body th,
 .md-body td {
   border: 1px solid var(--border);
-  padding: 0.3rem 0.6rem;
+  padding: 0.45rem 0.8rem;
 }
 .md-body ::selection {
   background: color-mix(in oklch, var(--link) 35%, transparent);

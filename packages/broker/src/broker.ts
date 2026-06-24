@@ -304,6 +304,7 @@ export class Broker {
       });
     }
     this.store.setFeedbackStatus(s.abspath, "queued", "submitted");
+    this.broadcast(s, { type: "feedback-status", from: "queued", to: "submitted" });
     s.pendingControl.push({ type: "finalize", batch, reviewNote: reviewNote ?? null });
     this.setState(s, "reworking");
     this.wake(s);
@@ -314,6 +315,7 @@ export class Broker {
     const s = this.require(sid);
     if (ok) {
       this.store.setFeedbackStatus(s.abspath, "submitted", "reworked");
+      this.broadcast(s, { type: "feedback-status", from: "submitted", to: "reworked" });
       this.setState(s, "waiting-for-review", { reworkResult: "success" });
     } else {
       this.setState(s, "waiting-for-review", { reworkResult: "error", message: error });

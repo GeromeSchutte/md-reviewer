@@ -193,6 +193,23 @@ describe("finalize -> rework cycle", () => {
     broker.reworkDone(sid, true);
     expect(broker.store.getFeedback(fid)?.status).toBe("reworked");
   });
+
+  it("broadcasts feedback-status transitions so the viewer can retire items", async () => {
+    const broker = makeBroker();
+    const { sid } = await broker.openSession(await tmpPlan());
+    broker.attach(sid, "agent");
+    broker.createFeedback(sid, null, "do the thing");
+    const { client, events } = capture();
+    broker.subscribe(sid, client);
+    events.length = 0; // drop the initial snapshot
+
+    broker.finalize(sid, null);
+    expect(events).toContainEqual({ type: "feedback-status", from: "queued", to: "submitted" });
+
+    events.length = 0;
+    broker.reworkDone(sid, true);
+    expect(events).toContainEqual({ type: "feedback-status", from: "submitted", to: "reworked" });
+  });
 });
 
 describe("doc updates: content-hash gate", () => {

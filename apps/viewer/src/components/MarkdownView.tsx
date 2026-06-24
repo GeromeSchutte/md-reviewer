@@ -1,8 +1,7 @@
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Plus } from "lucide-react";
-import { Popover } from "radix-ui";
 import type { Anchor } from "@plan-review/shared";
 import { anchorLabel, buildAnchor } from "../selection";
 import { nodeText, slugify } from "../toc";
@@ -101,6 +100,7 @@ export function MarkdownView({
   onSubmit: (anchor: Anchor, text: string, mode: ComposerMode) => void | Promise<void>;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<Band | null>(null);
   const [sel, setSel] = useState<Band | null>(null);
   const [anchorBand, setAnchorBand] = useState<Band | null>(null);
@@ -127,6 +127,19 @@ export function MarkdownView({
     setOpen(false);
     setSel(null);
   }, []);
+
+  // The composer is a plain in-flow panel (not a Radix popover), so wire up the
+  // click-outside-to-close it used to give us for free. Escape is handled inside
+  // ComposerBody. The opening gesture ends on mouseup, so a mousedown listener
+  // never races the open.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) close();
+    };
+    window.addEventListener("mousedown", onDown);
+    return () => window.removeEventListener("mousedown", onDown);
+  }, [open, close]);
 
   // Hover: reveal the gutter "+" beside the block under the cursor.
   const onMouseMove = useCallback((e: React.MouseEvent) => {
@@ -222,32 +235,22 @@ export function MarkdownView({
         </Markdown>
       </div>
 
-      {/* composer popover, anchored to the right of the selected lines */}
-      <Popover.Root open={open} onOpenChange={(o) => !o && close()}>
-        {sel && (
-          <Popover.Anchor asChild>
-            <div className="pointer-events-none absolute inset-x-0" style={{ top: sel.top, height: sel.height }} />
-          </Popover.Anchor>
-        )}
-        <Popover.Portal>
-          <Popover.Content
-            side="right"
-            align="start"
-            sideOffset={12}
-            collisionPadding={12}
-            onOpenAutoFocus={(e) => e.preventDefault()}
-            className="z-50 w-80 rounded-lg border border-border bg-popover p-3 text-popover-foreground shadow-lg outline-none"
-          >
-            {sel && (
-              <ComposerBody
-                label={anchorLabel(buildAnchor(ref.current!, sel.start, sel.end))}
-                onSubmit={submit}
-                onCancel={close}
-              />
-            )}
-          </Popover.Content>
-        </Popover.Portal>
-      </Popover.Root>
+      {/* composer: rendered inline directly beneath the selected lines and bounded
+          to the document column, so it stays fully on-screen at any window width
+          (the old right-side popover could spill off-screen when narrow). */}
+      {open && sel && (
+        <div
+          ref={panelRef}
+          className="absolute right-10 left-14 z-30 rounded-lg border border-border bg-popover p-3 text-popover-foreground shadow-xl"
+          style={{ top: sel.top + sel.height + 8 }}
+        >
+          <ComposerBody
+            label={anchorLabel(buildAnchor(ref.current!, sel.start, sel.end))}
+            onSubmit={submit}
+            onCancel={close}
+          />
+        </div>
+      )}
     </div>
   );
 }

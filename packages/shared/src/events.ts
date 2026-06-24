@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Anchor, FeedbackRecord, QuestionRecord, QuestionStatus } from "./records";
+import { Anchor, FeedbackRecord, FeedbackStatus, QuestionRecord, QuestionStatus } from "./records";
 
 /** Session lifecycle, surfaced in the viewer. */
 export const LifecycleState = z.enum([
@@ -101,6 +101,16 @@ export const FeedbackRemovedEvent = z.object({
   id: z.string(),
 });
 
+/** A bulk feedback status transition (mirrors the store's setFeedbackStatus),
+ *  so the viewer can retire items it already showed instead of leaving them
+ *  frozen at the status they had when first acked (e.g. queued → submitted on
+ *  finalize, submitted → reworked once the agent's rework lands). */
+export const FeedbackStatusEvent = z.object({
+  type: z.literal("feedback-status"),
+  from: FeedbackStatus,
+  to: FeedbackStatus,
+});
+
 export const AgentDisconnectedEvent = z.object({ type: z.literal("agent-disconnected") });
 
 export const ServerEvent = z.discriminatedUnion("type", [
@@ -111,6 +121,7 @@ export const ServerEvent = z.discriminatedUnion("type", [
   StateEvent,
   FeedbackAckEvent,
   FeedbackRemovedEvent,
+  FeedbackStatusEvent,
   AgentDisconnectedEvent,
 ]);
 export type ServerEvent = z.infer<typeof ServerEvent>;

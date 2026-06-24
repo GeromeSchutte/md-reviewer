@@ -22,10 +22,18 @@ State is keyed by the plan's absolute path, so reviews (Q&A + feedback) survive 
 ## Setup
 
 ```sh
-bun install
+./scripts/install
 ```
 
+One-command setup: installs dependencies (`bun install`), symlinks the skill and CLI
+wrapper into Claude Code's config dir, installs the always-on broker daemon, and builds
+the viewer. Idempotent — safe to re-run. Pass `--links-only` to (re)create just the
+symlinks (e.g. after moving the repo). Honours `CLAUDE_CONFIG_DIR`.
+
 Prerequisites: Bun, and (for the viewer) the Rust toolchain + Xcode Command Line Tools.
+
+The individual steps `./scripts/install` performs are documented below for reference
+(reloading the daemon after code changes, UI dev with hot reload, etc.).
 
 ### Install the daemon (always-on)
 
@@ -47,16 +55,12 @@ tail -f ~/.plan-review/broker.out.log                  # raw stdout (startup, cr
 
 Set `PLAN_REVIEW_LOG_LEVEL=debug` (or `silent`) to adjust verbosity.
 
-### Wire into Claude Code (skill + CLI wrapper)
+### Claude Code symlinks (skill + CLI wrapper)
 
-```sh
-./scripts/install
-```
-
-Symlinks the skill into `~/.claude/skills/plan-review` (so Claude Code discovers it)
-and the CLI wrapper into `~/.claude/scripts/plan-review` (the stable path the skill
-invokes — see `skills/plan-review/SKILL.md`). Idempotent, refuses to clobber a real
-file at either path, and honours `CLAUDE_CONFIG_DIR`.
+`./scripts/install` (or `./scripts/install --links-only`) symlinks the skill into
+`~/.claude/skills/plan-review` (so Claude Code discovers it) and the CLI wrapper into
+`~/.claude/scripts/plan-review` (the stable path the skill invokes — see
+`skills/plan-review/SKILL.md`). It refuses to clobber a real file at either path.
 
 ### Run the viewer
 

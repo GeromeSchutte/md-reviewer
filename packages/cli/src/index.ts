@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { resolve as resolvePath, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import type { AgentSource } from "@plan-review/shared";
 import {
   installDaemon,
@@ -78,6 +78,62 @@ function findViewerBinary(): string | undefined {
   return candidates.find((p) => existsSync(p));
 }
 
+/** Source inputs that, if newer than the built binary, mean it embeds a stale
+ *  frontend. Deliberately excludes node_modules / dist / src-tauri/target. */
+function viewerSourcePaths(root: string): string[] {
+  return [
+    join(root, "apps/viewer/src"),
+    join(root, "apps/viewer/src-tauri/src"),
+    join(root, "apps/viewer/src-tauri/Cargo.toml"),
+    join(root, "apps/viewer/src-tauri/tauri.conf.json"),
+    join(root, "apps/viewer/index.html"),
+    join(root, "apps/viewer/vite.config.ts"),
+    join(root, "apps/viewer/package.json"),
+    join(root, "packages/shared/src"),
+  ].filter((p) => existsSync(p));
+}
+
+/** Newest mtime (ms) under a file or directory tree. Trees here are small and
+ *  contain no node_modules/target, so a plain recursive walk is fine. */
+function newestMtimeMs(path: string): number {
+  const st = statSync(path);
+  if (!st.isDirectory()) return st.mtimeMs;
+  let max = st.mtimeMs;
+  for (const entry of readdirSync(path)) max = Math.max(max, newestMtimeMs(join(path, entry)));
+  return max;
+}
+
+/** True if any viewer source file is newer than the built binary. Deterministic
+ *  numeric mtime comparison — no dependency on `find -newer` semantics/portability. */
+function viewerStale(srcPaths: string[], bin: string): boolean {
+  const binMs = statSync(bin).mtimeMs;
+  return srcPaths.some((p) => newestMtimeMs(p) > binMs);
+}
+
+/**
+ * The release binary embeds the frontend at build time, so a viewer source change
+ * doesn't show up until it's rebuilt — silently serving stale UI (the exact trap
+ * that hid a styling rework during testing). Rebuild on `open` when the source is
+ * newer than the binary. A failed rebuild is non-fatal: we warn and launch the
+ * existing build rather than leave the user with no viewer.
+ */
+function ensureViewerFresh(): void {
+  if (process.env.PLAN_REVIEW_VIEWER_BIN) return; // explicit override — don't second-guess it
+  const root = repoRoot();
+  const srcPaths = viewerSourcePaths(root);
+  if (srcPaths.length === 0) return; // no source tree (installed standalone) — nothing to build from
+  const bin = findViewerBinary();
+  if (bin && !viewerStale(srcPaths, bin)) return;
+  console.log(bin ? "viewer source changed since last build — rebuilding…" : "no viewer build found — building…");
+  const res = Bun.spawnSync(["bun", "run", "tauri", "build", "--no-bundle"], {
+    cwd: join(root, "apps/viewer"),
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+  if (res.exitCode === 0) console.log("viewer rebuilt.");
+  else console.error("⚠️  viewer rebuild failed — launching the existing build (it may be stale). Rebuild manually: cd apps/viewer && bun run tauri build --no-bundle");
+}
+
 function launchViewer(sid: string, abspath: string): void {
   const bin = findViewerBinary();
   if (bin) {
@@ -133,6 +189,7 @@ async function main(): Promise<void> {
       // --json => the calling agent will attach itself (agent-initiated): suppress auto-spawn.
       const agentInitiated = !!flags.json;
       const { sid } = await createSession(abspath, agentInitiated);
+      ensureViewerFresh();
       launchViewer(sid, abspath);
       if (agentInitiated) console.log(JSON.stringify({ sid, abspath }));
       return;

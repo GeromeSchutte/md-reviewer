@@ -116,9 +116,8 @@ export default function App() {
       if (!sid) return;
       if (mode === "ask") {
         const id = await askQuestion(sid, anchor, text);
-        setQuestions((qs) => [
-          ...qs,
-          {
+        setQuestions((qs) => {
+          const optimistic: QuestionRecord = {
             id,
             abspath: "",
             anchor,
@@ -130,8 +129,19 @@ export default function App() {
             answeredAt: null,
             errorMessage: null,
             agentSource: null,
-          },
-        ]);
+          };
+          // The broker broadcasts qa-status (and possibly answer) for this question
+          // synchronously while handling the POST, so an SSE frame can land before
+          // it resolves — upsertQuestion then creates a skeleton record under this
+          // same id. Merge our text/anchor into that skeleton (existing fields win,
+          // so we never downgrade a status the server already advanced) instead of
+          // appending a duplicate.
+          const i = qs.findIndex((q) => q.id === id);
+          if (i === -1) return [...qs, optimistic];
+          const next = [...qs];
+          next[i] = { ...optimistic, ...next[i]! };
+          return next;
+        });
         setTab("qa");
       } else {
         await leaveFeedback(sid, anchor, text);

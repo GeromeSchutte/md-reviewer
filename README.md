@@ -47,13 +47,16 @@ tail -f ~/.plan-review/broker.out.log                  # raw stdout (startup, cr
 
 Set `PLAN_REVIEW_LOG_LEVEL=debug` (or `silent`) to adjust verbosity.
 
-### Install the skill (for agent-initiated reviews)
-
-Symlink the skill into Claude Code's skills directory:
+### Wire into Claude Code (skill + CLI wrapper)
 
 ```sh
-ln -s "$PWD/skills/plan-review" ~/.claude/skills/plan-review
+./scripts/install
 ```
+
+Symlinks the skill into `~/.claude/skills/plan-review` (so Claude Code discovers it)
+and the CLI wrapper into `~/.claude/scripts/plan-review` (the stable path the skill
+invokes — see `skills/plan-review/SKILL.md`). Idempotent, refuses to clobber a real
+file at either path, and honours `CLAUDE_CONFIG_DIR`.
 
 ### Run the viewer
 

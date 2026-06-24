@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# Wire plan-review into Claude Code's config dir (~/.claude, or $CLAUDE_CONFIG_DIR).
+#
+# Creates the two symlinks a fresh checkout needs but git can't track:
+#   <claude>/skills/plan-review   -> <repo>/skills/plan-review    (skill discovery)
+#   <claude>/scripts/plan-review  -> <repo>/scripts/plan-review   (CLI wrapper the skill invokes)
+#
+# Idempotent: safe to re-run. Refuses to clobber a real (non-symlink) file at
+# either target. Does NOT install deps, the broker daemon, or build the viewer —
+# those are separate documented steps (see the next-steps output and the README).
+set -euo pipefail
+
+# Resolve this script's real location, following symlinks (BSD/macOS-safe), so the
+# repo is found no matter where the script is invoked from.
+src="${BASH_SOURCE[0]}"
+while [ -h "$src" ]; do
+  dir="$(cd -P "$(dirname "$src")" && pwd)"
+  src="$(readlink "$src")"
+  [[ "$src" != /* ]] && src="$dir/$src"
+done
+repo="$(cd -P "$(dirname "$src")/.." && pwd)"
+
+claude_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+
+# link <symlink-path> <target>: create/refresh a symlink, refusing to touch a real file.
+link() {
+  local link_path="$1" target="$2"
+  mkdir -p "$(dirname "$link_path")"
+  if [ -e "$link_path" ] && [ ! -L "$link_path" ]; then
+    echo "✗ $link_path exists and is not a symlink — leaving it untouched" >&2
+    return 1
+  fi
+  ln -sfn "$target" "$link_path"
+  echo "✓ $link_path -> $target"
+}
+
+chmod +x "$repo/scripts/plan-review"
+
+status=0
+link "$claude_dir/skills/plan-review" "$repo/skills/plan-review" || status=1
+link "$claude_dir/scripts/plan-review" "$repo/scripts/plan-review" || status=1
+
+if [ "$status" -ne 0 ]; then
+  echo "" >&2
+  echo "Some links were not created (see above). Resolve the conflicts and re-run." >&2
+  exit 1
+fi
+
+cat <<EOF
+
+plan-review wired into $claude_dir.
+
+Next steps (see README):
+  bun install                                          # dependencies
+  bun run packages/cli/src/index.ts install            # always-on broker daemon (LaunchAgent)
+  cd apps/viewer && bun run tauri build --no-bundle    # build the viewer once
+EOF

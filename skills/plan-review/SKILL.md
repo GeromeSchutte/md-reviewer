@@ -7,7 +7,7 @@ description: Open a generated markdown plan/document in the live Plan Review vie
 
 This skill runs an interactive review loop over a markdown file using the Plan Review tool (an always-on broker daemon + a desktop viewer). You answer the user's questions from your live context and apply their batched feedback when they submit the review.
 
-The CLI is invoked as `bun <REPO>/packages/cli/src/index.ts <command>` (referred to below as `plan-review`). When you are spawned by the broker for a user-opened file, the seed message gives you the exact command path, the session id, and the absolute plan path — skip step 1 and use those.
+The CLI is invoked as `~/.claude/scripts/plan-review <command>` (referred to below as `plan-review`). When you are spawned by the broker for a user-opened file, the seed message gives you the exact command path, the session id, and the absolute plan path — skip step 1 and use those.
 
 ## 1. Open the file for review (agent-initiated only)
 

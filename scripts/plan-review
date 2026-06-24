@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Thin wrapper around the plan-review CLI so it can be invoked by a stable name
+# regardless of where this repo lives. Symlinked into ~/.claude/scripts/plan-review
+# so the plan-review skill can call `~/.claude/scripts/plan-review <command>`.
+#
+# All arguments and stdin are forwarded verbatim to the CLI entrypoint.
+set -euo pipefail
+
+# Resolve this script's real location, following symlinks (BSD/macOS-safe), so we
+# find the repo even when invoked via the ~/.claude/scripts symlink.
+src="${BASH_SOURCE[0]}"
+while [ -h "$src" ]; do
+  dir="$(cd -P "$(dirname "$src")" && pwd)"
+  src="$(readlink "$src")"
+  [[ "$src" != /* ]] && src="$dir/$src"
+done
+script_dir="$(cd -P "$(dirname "$src")" && pwd)"
+repo="$(cd -P "$script_dir/.." && pwd)"
+
+exec bun "$repo/packages/cli/src/index.ts" "$@"

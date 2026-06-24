@@ -69,6 +69,7 @@ export function subscribe(sid: string, onEvent: (e: ServerEvent) => void, onErro
     "state",
     "feedback-ack",
     "feedback-removed",
+    "feedback-status",
     "agent-disconnected",
   ];
   const handler = (ev: MessageEvent) => {

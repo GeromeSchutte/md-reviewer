@@ -101,6 +101,11 @@ export default function App() {
           case "feedback-removed":
             setFeedback((fs) => fs.filter((f) => f.id !== e.id));
             break;
+          case "feedback-status":
+            // Bulk transition (e.g. queued→submitted on finalize, submitted→reworked
+            // after the rework lands) so items retire instead of staying "queued".
+            setFeedback((fs) => fs.map((f) => (f.status === e.from ? { ...f, status: e.to } : f)));
+            break;
           case "agent-disconnected":
             setState("agent-disconnected");
             break;
@@ -477,50 +482,110 @@ function ReviewList({
   onHover: (anchor: Anchor | null) => void;
 }) {
   const active = feedback.filter((f) => f.status === "queued" || f.status === "submitted");
-  if (active.length === 0)
+  const resolved = feedback.filter((f) => f.status === "reworked");
+  if (active.length === 0 && resolved.length === 0)
     return (
       <Empty icon={PenLine} title="No feedback yet">
         Mark up lines in the document, then submit the batch to the agent for a rework.
       </Empty>
     );
   return (
-    <ul className="space-y-2.5">
-      {[...active].reverse().map((f) => {
-        const queued = f.status === "queued";
-        return (
-          <li
-            key={f.id}
-            onMouseEnter={() => onHover(f.anchor)}
-            onMouseLeave={() => onHover(null)}
-            onFocus={() => onHover(f.anchor)}
-            onBlur={() => onHover(null)}
-            className={cn(
-              "rounded-lg border border-border bg-card p-3 text-sm shadow-xs transition-colors",
-              queued && "border-l-2 border-l-marker",
-              f.anchor && "hover:border-marker/40",
-            )}
-          >
-            <div className="mb-2 flex items-center gap-2">
-              <AnchorTag anchor={f.anchor} tone={queued ? "marker" : "muted"} />
-              <span
+    <div className="space-y-4">
+      {active.length > 0 && (
+        <ul className="space-y-2.5">
+          {[...active].reverse().map((f) => {
+            const queued = f.status === "queued";
+            return (
+              <li
+                key={f.id}
+                onMouseEnter={() => onHover(f.anchor)}
+                onMouseLeave={() => onHover(null)}
+                onFocus={() => onHover(f.anchor)}
+                onBlur={() => onHover(null)}
                 className={cn(
-                  "font-mono text-[0.6rem] font-medium tracking-[0.1em] uppercase",
-                  queued ? "text-marker" : "text-success",
+                  "rounded-lg border border-border bg-card p-3 text-sm shadow-xs transition-colors",
+                  queued && "border-l-2 border-l-marker",
+                  f.anchor && "hover:border-marker/40",
                 )}
               >
-                {f.status}
-              </span>
-              {queued && (
-                <Button variant="ghost" size="xs" className="ml-auto" onClick={() => removeFeedback(sid, f.id)}>
-                  Remove
-                </Button>
-              )}
-            </div>
-            <p className="text-foreground/90">{f.text}</p>
-          </li>
-        );
-      })}
-    </ul>
+                <div className="mb-2 flex items-center gap-2">
+                  <AnchorTag anchor={f.anchor} tone={queued ? "marker" : "muted"} />
+                  <span
+                    className={cn(
+                      "font-mono text-[0.6rem] font-medium tracking-[0.1em] uppercase",
+                      queued ? "text-marker" : "text-info",
+                    )}
+                  >
+                    {f.status}
+                  </span>
+                  {queued && (
+                    <Button variant="ghost" size="xs" className="ml-auto" onClick={() => removeFeedback(sid, f.id)}>
+                      Remove
+                    </Button>
+                  )}
+                </div>
+                <p className="text-foreground/90">{f.text}</p>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {resolved.length > 0 && <ResolvedGroup feedback={resolved} onHover={onHover} />}
+    </div>
+  );
+}
+
+/** Feedback the agent has already reworked: collapsed by default, visually retired,
+ *  and tagged with the doc version each comment was written against. */
+function ResolvedGroup({
+  feedback,
+  onHover,
+}: {
+  feedback: FeedbackRecord[];
+  onHover: (anchor: Anchor | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center gap-1.5 px-1 py-1 font-mono text-[0.62rem] font-medium tracking-[0.1em] text-muted-foreground uppercase transition-colors hover:text-foreground"
+      >
+        <span className="text-success">✓</span>
+        Addressed
+        <TabCount n={feedback.length} />
+        <span className="ml-auto text-sm leading-none">{open ? "–" : "+"}</span>
+      </button>
+      {open && (
+        <ul className="mt-1.5 space-y-2">
+          {[...feedback].reverse().map((f) => (
+            <li
+              key={f.id}
+              onMouseEnter={() => onHover(f.anchor)}
+              onMouseLeave={() => onHover(null)}
+              onFocus={() => onHover(f.anchor)}
+              onBlur={() => onHover(null)}
+              className="rounded-lg border border-border/60 bg-muted/30 p-3 text-sm opacity-80 transition-opacity hover:opacity-100"
+            >
+              <div className="mb-2 flex items-center gap-2">
+                <AnchorTag anchor={f.anchor} tone="muted" />
+                <span className="font-mono text-[0.6rem] font-medium tracking-[0.1em] text-success uppercase">
+                  addressed
+                </span>
+                <span
+                  className="ml-auto font-mono text-[0.6rem] tracking-tight text-muted-foreground/70"
+                  title={`written against doc version ${f.docVersion}`}
+                >
+                  @{f.docVersion.slice(0, 7)}
+                </span>
+              </div>
+              <p className="text-foreground/70">{f.text}</p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 

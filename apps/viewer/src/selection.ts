@@ -14,11 +14,15 @@ export function anchorLabel(a: Anchor | null): string {
  * reworks/sessions.
  */
 export function buildAnchor(container: HTMLElement, startLine: number, endLine: number): Anchor {
-  const blocks = Array.from(container.querySelectorAll<HTMLElement>("[data-source-line]")).filter((el) => {
+  const matched = Array.from(container.querySelectorAll<HTMLElement>("[data-source-line]")).filter((el) => {
     const s = Number(el.getAttribute("data-source-line"));
     const e = Number(el.getAttribute("data-source-end") ?? el.getAttribute("data-source-line"));
     return s >= startLine && e <= endLine;
   });
+  // Source lines are stamped on nested blocks too (e.g. a <blockquote> and its inner
+  // <p>), so keep only the outermost matches — otherwise a parent's textContent and
+  // its child's would both be joined, duplicating the quote.
+  const blocks = matched.filter((el) => !matched.some((other) => other !== el && other.contains(el)));
 
   const exact = blocks
     .map((el) => el.textContent ?? "")

@@ -347,7 +347,10 @@ async function runTeardown(purge: boolean): Promise<void> {
 function launchViewer(sid: string, abspath: string): void {
   const bin = findViewerBinary();
   if (bin) {
-    const proc = Bun.spawn([bin], {
+    // Pass the target as argv *and* env: a fresh launch reads env, while a launch
+    // into an already-running viewer is short-circuited by the single-instance
+    // plugin, which forwards only argv to the running app (it opens a new window).
+    const proc = Bun.spawn([bin, "--session", sid, "--path", abspath], {
       env: { ...process.env, PLAN_REVIEW_SESSION: sid, PLAN_REVIEW_PATH: abspath },
       stdout: "ignore",
       stderr: "ignore",

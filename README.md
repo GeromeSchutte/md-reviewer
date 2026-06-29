@@ -138,15 +138,15 @@ bun run packages/cli/src/index.ts restart      # reload after changing broker co
 ### Viewer
 
 ```sh
-# Build the standalone viewer (embeds the frontend; this is what `open` launches):
-cd apps/viewer && bun run tauri build --no-bundle
+# Build the "Plan Review" viewer app (embeds the frontend; this is what `open` launches):
+cd apps/viewer && bun run tauri build --bundles app
 # …or for development with hot reload:
 cd apps/viewer && bun run tauri dev
 ```
 
-> The **debug** build (`cargo build` / `tauri dev`) loads the Vite dev server at `localhost:5173`, so it shows a blank window unless that server is running. `plan-review open` only launches a **release** build, which serves the embedded frontend standalone — build it with `tauri build --no-bundle` (produces `apps/viewer/src-tauri/target/release/app`).
-
-To open a specific plan, the CLI sets `PLAN_REVIEW_SESSION`/`PLAN_REVIEW_PATH` for the viewer binary:
+> The **debug** build (`cargo build` / `tauri dev`) loads the Vite dev server at `localhost:5173`, so it shows a blank window unless that server is running. `plan-review open` only launches a **release** build, which serves the embedded frontend standalone — build it with `tauri build --bundles app` (produces `apps/viewer/src-tauri/target/release/bundle/macos/Plan Review.app`). The `.app` bundle is what gives the dock its icon and "Plan Review" name; launching the raw binary shows the generic executable icon instead.
+>
+> A single `Plan Review` app instance hosts every open plan: each `open` either spawns the app (first plan) or, via `tauri-plugin-single-instance`, hands its session to the running app as a **new window** titled after the plan file. The CLI passes the target both as argv (forwarded by single-instance) and as `PLAN_REVIEW_SESSION`/`PLAN_REVIEW_PATH` env (read on the first launch):
 
 ```sh
 bun run packages/cli/src/index.ts open path/to/plan.md
@@ -195,5 +195,5 @@ Set `PLAN_REVIEW_LOG_LEVEL=debug` (or `silent`) to adjust verbosity.
 Common issues:
 
 - **`status` shows `running: false`** — the daemon isn't up. Run `bun run packages/cli/src/index.ts restart`, then check `~/.plan-review/broker.out.log` for a startup crash.
-- **Viewer opens to a blank window** — you launched a debug build with no Vite server running. Build the release binary: `cd apps/viewer && bun run tauri build --no-bundle`.
+- **Viewer opens to a blank window** — you launched a debug build with no Vite server running. Build the release app: `cd apps/viewer && bun run tauri build --bundles app`.
 - **Claude can't find the `plan-review` skill** — the symlink is missing or points at an old path. Re-wire it: `./scripts/install --links-only`.

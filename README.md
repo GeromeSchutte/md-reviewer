@@ -21,53 +21,114 @@ State is keyed by the plan's absolute path, so reviews (Q&A + feedback) survive 
 
 ## Setup
 
+`bun install` is the entire setup. It runs `preinstall` (toolchain checks) and
+`postinstall` (`plan-review setup`) lifecycle hooks that wire everything in one command.
+
+### Requirements
+
+| Requirement | Why | Required? | Install |
+| --- | --- | --- | --- |
+| **macOS** | The daemon is a launchd **LaunchAgent** and the viewer is a **Tauri `.app`** | Yes — the tool only functions on macOS. On other platforms `bun install` succeeds but the daemon/viewer steps no-op, so the tool won't run. | — |
+| **Bun ≥ 1.2.0** | It's the **runtime** for the daemon + CLI (`bun:sqlite`, `Bun.serve`), not just the package manager. Can't be bootstrapped from within — you need it to run `bun install` at all. | Yes — install **first**, out of band. | `brew install bun` |
+| **Rust toolchain** (`cargo`, `rustc`) | Compiles the Tauri viewer. | Only for the viewer. Without it, install proceeds; the viewer builds lazily on first `open` once Rust is present. | `brew install rust` (or `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh`) |
+| **Xcode Command Line Tools** | Rust won't link without them. | Only for the viewer build. | `xcode-select --install` (Apple's installer — no Homebrew formula) |
+| **Claude Code** | Discovers the skill + CLI wrapper via symlinks in its config dir (`~/.claude`, or `$CLAUDE_CONFIG_DIR` if set). | Yes — it's the agent surface. | — |
+
+`preinstall` checks Bun's version and warns (with these exact commands) if Rust or the
+Command Line Tools are missing — but **never fails the install**; the warnings are advisory.
+
+### Install — step by step
+
 ```sh
-git clone … && cd planning-tool
+# 1. Install Bun first if you don't have it (it can't install itself):
+brew install bun
+
+# 2. Clone and enter the repo:
+git clone <repo-url> planning-tool
+cd planning-tool
+
+# 3. One command does everything:
 bun install
 ```
 
-That's it. `bun install` is the whole setup — its lifecycle hooks do everything:
+What you'll see: `preinstall` prints a prerequisites check, then `postinstall` runs
+`plan-review setup` (symlinks → daemon → viewer). On a fresh clone with Rust present the
+first run compiles the viewer, which can take a few minutes; subsequent runs skip it.
 
-- **`preinstall`** (`scripts/preinstall`) checks the prerequisites Bun can't install and
-  **warns without failing** (the install always proceeds): Bun version floor, the Rust
-  toolchain (`brew install rust`), and Xcode Command Line Tools (`xcode-select --install`).
-- **`postinstall`** (`plan-review setup`) symlinks the skill + CLI wrapper into Claude
-  Code's config dir, installs the always-on broker daemon, and builds the viewer.
-
-Idempotent and safe to re-run — re-running `bun install` is also how you re-do setup
-after moving the repo. It never restarts a healthy daemon, and skips the viewer build
-when the build is current (or when Rust isn't installed yet — it then builds lazily on
-first `open`). Honours `CLAUDE_CONFIG_DIR`.
-
-**Prerequisites.** **Bun is required and must be installed first** — it's the runtime for
-the daemon and CLI (not just the package manager), so it can't be bootstrapped from within
-(`brew install bun`). The Rust toolchain + Xcode Command Line Tools are needed only for the
-desktop viewer; the `preinstall` check prints the exact commands. macOS only (LaunchAgent +
-Tauri app); on other platforms the daemon/viewer steps no-op cleanly.
-
-**Escape hatch.** `bun install --ignore-scripts` (or `PLAN_REVIEW_SKIP_SETUP=1 bun install`)
-installs dependencies without running setup — useful in CI.
+Then verify:
 
 ```sh
-./scripts/install                # convenience alias for `bun install`
-./scripts/install --links-only   # only (re)create the Claude Code symlinks
+bun run packages/cli/src/index.ts status
+# => {"installed": true, "running": true, "health": { "ok": true, ... }}
 ```
 
-### Uninstall
+Once this is green, the next time Claude generates a markdown plan it auto-discovers the
+skill and opens it for review — nothing else to start.
+
+**Re-running.** `bun install` is idempotent and is also how you redo setup (e.g. after
+moving the repo — symlinks are absolute). It never restarts a **healthy** daemon and skips
+an up-to-date viewer build. To only re-wire the symlinks: `./scripts/install --links-only`.
+
+**Skipping setup (CI / deps-only).** `bun install --ignore-scripts`, or
+`PLAN_REVIEW_SKIP_SETUP=1 bun install`, installs dependencies without running the hooks.
+
+### What `bun install` does, exactly
+
+`preinstall` (`scripts/preinstall`) — warn-only, always exits 0:
+- Checks Bun ≥ 1.2.0; warns + prints the upgrade command if older.
+- Warns (with the install commands above) if `cargo` or the Xcode Command Line Tools are absent.
+
+`postinstall` (`bun packages/cli/src/index.ts setup`) — best-effort; a failure in any step
+warns but never aborts `bun install`:
+
+1. **Symlinks** (all platforms) — into Claude Code's config dir (`$CLAUDE_CONFIG_DIR` or `~/.claude`):
+   - `…/skills/plan-review`  → `<repo>/skills/plan-review`  (skill discovery)
+   - `…/scripts/plan-review` → `<repo>/scripts/plan-review` (the stable path the skill invokes; made executable)
+
+   Refuses to overwrite a *real* file at either path; replaces a stale/dangling symlink.
+2. **Broker daemon** (macOS only) — if it's already installed **and** healthy, it's left running. Otherwise it writes `~/Library/LaunchAgents/ai.plan-review.broker.plist`, loads it with `launchctl` (`bootstrap` + `enable` + `kickstart`), and creates the data dir `~/.plan-review/`.
+3. **Viewer** (macOS only) — skipped if Rust is absent (built lazily on first `open`) or if the build is current; otherwise runs `tauri build --no-bundle`, producing `apps/viewer/src-tauri/target/release/app`.
+
+State created **outside the repo** (this is what rollback removes):
+
+| Path | What | Created by |
+| --- | --- | --- |
+| `~/.claude/skills/plan-review` | symlink → repo | step 1 |
+| `~/.claude/scripts/plan-review` | symlink → repo | step 1 |
+| `~/Library/LaunchAgents/ai.plan-review.broker.plist` | LaunchAgent + loaded service `ai.plan-review.broker` | step 2 |
+| `~/.plan-review/` | data dir: `store.sqlite` (review history), `broker.log`, `broker.out.log`, `broker.err.log`, `broker.pid` | step 2 + daemon at runtime |
+
+Everything else (`node_modules/`, `apps/viewer/src-tauri/target/`) lives inside the repo and
+disappears when you delete the clone.
+
+### Roll back / uninstall
+
+Run this **before deleting the clone** — nothing fires on `rm -rf`, so a deleted repo would
+otherwise orphan the LaunchAgent and leave dangling symlinks behind.
 
 ```sh
-bun run uninstall            # or ./scripts/uninstall — remove symlinks + daemon
+bun run uninstall            # or ./scripts/uninstall
 bun run uninstall --purge    # also delete ~/.plan-review (review history + logs)
 ```
 
-Reverses what setup added: removes the broker daemon and the Claude Code symlinks (only
-those resolving into *this* repo — it won't touch a link another clone owns). **Run it
-before deleting the clone** — nothing fires on `rm -rf`, so a deleted repo would otherwise
-orphan the LaunchAgent plist and leave dangling symlinks. Review history in `~/.plan-review`
-is preserved unless you pass `--purge`.
+It reverses what setup added: boots out + removes the LaunchAgent plist, and removes the two
+Claude Code symlinks — **but only if they resolve into *this* repo** (a link owned by another
+clone is left untouched). `~/.plan-review` is **kept by default** (so review history
+survives) unless you pass `--purge`. After uninstalling, delete the clone to remove
+`node_modules/` and the viewer build.
 
-The individual steps are documented below for reference (reloading the daemon after code
-changes, UI dev with hot reload, etc.).
+**Manual fallback** — if you already deleted the repo (or the CLI won't run), remove the
+state by hand:
+
+```sh
+launchctl bootout "gui/$(id -u)/ai.plan-review.broker" 2>/dev/null
+rm -f ~/Library/LaunchAgents/ai.plan-review.broker.plist
+rm -f ~/.claude/skills/plan-review ~/.claude/scripts/plan-review   # only if they point at the old repo
+rm -rf ~/.plan-review                                              # optional: review history + logs
+```
+
+The individual setup steps are documented below for reference (reloading the daemon after
+code changes, UI dev with hot reload, etc.).
 
 ### Install the daemon (always-on)
 

@@ -7,11 +7,18 @@
     "apps/*"
   ],
   "scripts": {
+    "preinstall": "bash scripts/preinstall",
+    "postinstall": "bun packages/cli/src/index.ts setup",
+    "setup": "bun packages/cli/src/index.ts setup",
+    "uninstall": "bun packages/cli/src/index.ts teardown",
     "broker": "bun run packages/broker/src/index.ts",
     "cli": "bun run packages/cli/src/index.ts",
     "tauri:build": "bun run --filter '@plan-review/viewer' tauri build",
     "typecheck": "tsc --build",
     "test": "bun test"
+  },
+  "engines": {
+    "bun": ">=1.2.0"
   },
   "devDependencies": {
     "@types/bun": "^1.3.0",

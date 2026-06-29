@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# preinstall: warn (never fail) about toolchain prerequisites that Bun cannot install.
+# Runs before `bun install` links dependencies. Plain bash — no workspace imports, since
+# deps aren't linked yet. Checks:
+#   - Bun version floor (Bun is the runtime here, not just the package manager).
+#   - Rust toolchain (cargo) — needed only to build the desktop viewer.
+#   - Xcode Command Line Tools — Rust won't link without them (macOS).
+# ALWAYS exits 0: a non-zero preinstall aborts `bun install`, which would leave a fresh
+# clone unable to even fetch dependencies. These are warnings, not gates.
+set -uo pipefail   # deliberately NOT -e — a failed check must not abort the install.
+
+MIN_BUN="1.2.0"
+warned=0
+note() { echo "  ⚠️  $*" >&2; warned=1; }
+
+# Respect the same escape hatch as setup (CI / scripted installs).
+[ "${PLAN_REVIEW_SKIP_SETUP:-}" = "1" ] && exit 0
+
+echo "▶ checking prerequisites" >&2
+
+# --- Bun version (Bun is present by definition — this hook runs under it) ---
+cur_bun="$(bun --version 2>/dev/null || echo 0)"
+lowest="$(printf '%s\n%s\n' "$MIN_BUN" "$cur_bun" | sort -V | head -n1)"
+if [ "$lowest" != "$MIN_BUN" ]; then
+  note "Bun $cur_bun is older than the required $MIN_BUN — upgrade:  brew upgrade bun"
+fi
+
+# --- Rust toolchain (viewer build only) ---
+if ! command -v cargo >/dev/null 2>&1; then
+  note "Rust (cargo) not found — needed to build the desktop viewer:"
+  echo "         brew install rust" >&2
+  echo "         (or, for toolchain management: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh)" >&2
+fi
+
+# --- Xcode Command Line Tools (macOS; Rust won't link without them) ---
+if [ "$(uname)" = "Darwin" ] && ! xcode-select -p >/dev/null 2>&1; then
+  note "Xcode Command Line Tools not found — required to compile the viewer:"
+  echo "         xcode-select --install   (Apple's installer — there is no Homebrew formula)" >&2
+fi
+
+if [ "$warned" -eq 1 ]; then
+  {
+    echo
+    echo "  The above are only needed for the desktop viewer; install will continue regardless."
+    echo "  Once installed, re-run  bun install  to build the viewer."
+  } >&2
+else
+  echo "  ✓ toolchain looks good" >&2
+fi
+exit 0

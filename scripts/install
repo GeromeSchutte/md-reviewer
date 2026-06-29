@@ -1,32 +1,19 @@
 #!/usr/bin/env bash
-# One-command setup for plan-review. Runs, in order:
-#   1. bun install                                   — dependencies
-#   2. symlinks into Claude Code's config dir        — skill + CLI wrapper
-#   3. broker daemon install                         — always-on LaunchAgent
-#   4. viewer build                                  — the release app `open` launches
+# Convenience wrapper. `bun install` already does the full setup via the preinstall
+# (toolchain checks) and postinstall (symlinks + daemon + viewer) hooks — this script
+# just runs it, plus a --links-only shortcut for re-wiring symlinks after moving the repo.
 #
-# Symlinks created (git can't track these; they live in ~/.claude, or $CLAUDE_CONFIG_DIR):
-#   <claude>/skills/plan-review   -> <repo>/skills/plan-review    (skill discovery)
-#   <claude>/scripts/plan-review  -> <repo>/scripts/plan-review   (CLI wrapper the skill invokes)
+#   ./scripts/install                # full: deps + symlinks + daemon + viewer
+#   ./scripts/install --links-only   # only (re)create the Claude Code symlinks
 #
-# Idempotent: safe to re-run. Refuses to clobber a real (non-symlink) file at a link target.
-# Pass --links-only to (re)create just the symlinks — useful after moving the repo, without
-# reinstalling deps, the daemon, or rebuilding the viewer.
-#
-# Usage: ./scripts/install [--links-only]
+# To reverse everything, see ./scripts/uninstall (run it before deleting the repo).
 set -euo pipefail
 
-links_only=0
-for arg in "$@"; do
-  case "$arg" in
-    --links-only) links_only=1 ;;
-    -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
-    *) echo "unknown option: $arg (see --help)" >&2; exit 2 ;;
-  esac
-done
+case "${1:-}" in
+  -h|--help) sed -n '2,11p' "$0"; exit 0 ;;
+esac
 
-# Resolve this script's real location, following symlinks (BSD/macOS-safe), so the
-# repo is found no matter where the script is invoked from.
+# Resolve this script's real location, following symlinks (BSD/macOS-safe).
 src="${BASH_SOURCE[0]}"
 while [ -h "$src" ]; do
   dir="$(cd -P "$(dirname "$src")" && pwd)"
@@ -35,49 +22,9 @@ while [ -h "$src" ]; do
 done
 repo="$(cd -P "$(dirname "$src")/.." && pwd)"
 
-claude_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
-cli="$repo/packages/cli/src/index.ts"
-
-step() { echo; echo "▶ $*"; }
-
-# link <symlink-path> <target>: create/refresh a symlink, refusing to touch a real file.
-link() {
-  local link_path="$1" target="$2"
-  mkdir -p "$(dirname "$link_path")"
-  if [ -e "$link_path" ] && [ ! -L "$link_path" ]; then
-    echo "✗ $link_path exists and is not a symlink — leaving it untouched" >&2
-    return 1
-  fi
-  ln -sfn "$target" "$link_path"
-  echo "✓ $link_path -> $target"
-}
-
-if [ "$links_only" -eq 0 ]; then
-  step "Installing dependencies (bun install)"
-  ( cd "$repo" && bun install )
+if [ "${1:-}" = "--links-only" ]; then
+  exec bun "$repo/packages/cli/src/index.ts" setup --links-only
 fi
 
-step "Wiring symlinks into $claude_dir"
-chmod +x "$repo/scripts/plan-review"
-link "$claude_dir/skills/plan-review" "$repo/skills/plan-review"
-link "$claude_dir/scripts/plan-review" "$repo/scripts/plan-review"
-
-if [ "$links_only" -eq 1 ]; then
-  echo; echo "Symlinks wired. (--links-only: skipped deps, daemon, and viewer build.)"
-  exit 0
-fi
-
-step "Installing the broker daemon (LaunchAgent)"
-bun "$cli" install
-bun "$cli" status
-
-step "Building the viewer (tauri build --no-bundle)"
-if ( cd "$repo/apps/viewer" && bun run tauri build --no-bundle ); then
-  echo "✓ viewer built"
-else
-  echo "⚠️  viewer build failed — the skill, daemon, and CLI are still installed." >&2
-  echo "   Build it manually once you have the Rust toolchain + Xcode CLT:" >&2
-  echo "   cd apps/viewer && bun run tauri build --no-bundle" >&2
-fi
-
-echo; echo "plan-review setup complete."
+cd "$repo"
+exec bun install

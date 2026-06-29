@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Reverse what install added: remove the Claude Code symlinks and the broker daemon.
+# Run this BEFORE deleting the repo — nothing fires on `rm -rf`, so a deleted clone
+# would orphan the LaunchAgent plist and leave dangling symlinks behind.
+#
+#   ./scripts/uninstall            # remove symlinks + daemon, keep ~/.plan-review history
+#   ./scripts/uninstall --purge    # also delete ~/.plan-review (review history + logs)
+set -euo pipefail
+
+case "${1:-}" in
+  -h|--help) sed -n '2,9p' "$0"; exit 0 ;;
+esac
+
+# Resolve this script's real location, following symlinks (BSD/macOS-safe).
+src="${BASH_SOURCE[0]}"
+while [ -h "$src" ]; do
+  dir="$(cd -P "$(dirname "$src")" && pwd)"
+  src="$(readlink "$src")"
+  [[ "$src" != /* ]] && src="$dir/$src"
+done
+repo="$(cd -P "$(dirname "$src")/.." && pwd)"
+
+exec bun "$repo/packages/cli/src/index.ts" teardown "$@"

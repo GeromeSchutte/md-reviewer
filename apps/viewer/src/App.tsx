@@ -10,6 +10,7 @@ import { ComposerBody, type ComposerMode } from "./components/Composer";
 import { anchorLabel } from "./selection";
 import { jumpTo, parseToc, useScrollSpy } from "./toc";
 import { resolveSession } from "./launch";
+import { isMock } from "./mock";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -115,6 +116,26 @@ export default function App() {
     );
     return dispose;
   }, [sid]);
+
+  // Title the OS window after the plan's own H1 so multiple plan windows are
+  // distinguishable in the dock and window menu — a bare file name like "plan.md"
+  // repeats across reviews. Falls back to the file-name title set natively on launch.
+  useEffect(() => {
+    if (isMock()) return;
+    const h1 = markdown.match(/^#\s+(.+?)\s*$/m)?.[1]?.replace(/[*_`]/g, "").trim();
+    if (!h1) return;
+    let cancelled = false;
+    void import("@tauri-apps/api/window")
+      .then(({ getCurrentWindow }) => {
+        if (!cancelled) return getCurrentWindow().setTitle(h1);
+      })
+      .catch(() => {
+        /* not running inside Tauri (browser/dev) */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [markdown]);
 
   const submitAnnotation = useCallback(
     async (anchor: Anchor | null, text: string, mode: ComposerMode) => {

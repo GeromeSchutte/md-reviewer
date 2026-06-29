@@ -50,12 +50,18 @@ fn open_plan_window(app: &AppHandle, session: Option<String>, path: Option<Strin
                 return;
             }
             let url = WebviewUrl::App(format!("index.html?session={sid}").into());
-            let _ = WebviewWindowBuilder::new(app, &label, url)
+            let built = WebviewWindowBuilder::new(app, &label, url)
                 .title(window_title(path.as_deref()))
                 .inner_size(1200.0, 860.0)
                 .resizable(true)
                 .focused(true)
                 .build();
+            // Surface it: a second `open` forwards into an already-running (and possibly
+            // backgrounded) app, where the builder's `focused` flag alone may not raise
+            // the window. `set_focus` brings it to the front of its app.
+            if let Ok(win) = built {
+                let _ = win.set_focus();
+            }
         }
         None => {
             if app.get_webview_window("main").is_none() {

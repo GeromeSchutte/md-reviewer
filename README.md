@@ -22,18 +22,52 @@ State is keyed by the plan's absolute path, so reviews (Q&A + feedback) survive 
 ## Setup
 
 ```sh
-./scripts/install
+git clone … && cd planning-tool
+bun install
 ```
 
-One-command setup: installs dependencies (`bun install`), symlinks the skill and CLI
-wrapper into Claude Code's config dir, installs the always-on broker daemon, and builds
-the viewer. Idempotent — safe to re-run. Pass `--links-only` to (re)create just the
-symlinks (e.g. after moving the repo). Honours `CLAUDE_CONFIG_DIR`.
+That's it. `bun install` is the whole setup — its lifecycle hooks do everything:
 
-Prerequisites: Bun, and (for the viewer) the Rust toolchain + Xcode Command Line Tools.
+- **`preinstall`** (`scripts/preinstall`) checks the prerequisites Bun can't install and
+  **warns without failing** (the install always proceeds): Bun version floor, the Rust
+  toolchain (`brew install rust`), and Xcode Command Line Tools (`xcode-select --install`).
+- **`postinstall`** (`plan-review setup`) symlinks the skill + CLI wrapper into Claude
+  Code's config dir, installs the always-on broker daemon, and builds the viewer.
 
-The individual steps `./scripts/install` performs are documented below for reference
-(reloading the daemon after code changes, UI dev with hot reload, etc.).
+Idempotent and safe to re-run — re-running `bun install` is also how you re-do setup
+after moving the repo. It never restarts a healthy daemon, and skips the viewer build
+when the build is current (or when Rust isn't installed yet — it then builds lazily on
+first `open`). Honours `CLAUDE_CONFIG_DIR`.
+
+**Prerequisites.** **Bun is required and must be installed first** — it's the runtime for
+the daemon and CLI (not just the package manager), so it can't be bootstrapped from within
+(`brew install bun`). The Rust toolchain + Xcode Command Line Tools are needed only for the
+desktop viewer; the `preinstall` check prints the exact commands. macOS only (LaunchAgent +
+Tauri app); on other platforms the daemon/viewer steps no-op cleanly.
+
+**Escape hatch.** `bun install --ignore-scripts` (or `PLAN_REVIEW_SKIP_SETUP=1 bun install`)
+installs dependencies without running setup — useful in CI.
+
+```sh
+./scripts/install                # convenience alias for `bun install`
+./scripts/install --links-only   # only (re)create the Claude Code symlinks
+```
+
+### Uninstall
+
+```sh
+bun run uninstall            # or ./scripts/uninstall — remove symlinks + daemon
+bun run uninstall --purge    # also delete ~/.plan-review (review history + logs)
+```
+
+Reverses what setup added: removes the broker daemon and the Claude Code symlinks (only
+those resolving into *this* repo — it won't touch a link another clone owns). **Run it
+before deleting the clone** — nothing fires on `rm -rf`, so a deleted repo would otherwise
+orphan the LaunchAgent plist and leave dangling symlinks. Review history in `~/.plan-review`
+is preserved unless you pass `--purge`.
+
+The individual steps are documented below for reference (reloading the daemon after code
+changes, UI dev with hot reload, etc.).
 
 ### Install the daemon (always-on)
 

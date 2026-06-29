@@ -1,7 +1,18 @@
 #!/usr/bin/env bun
 import { resolve as resolvePath, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { homedir } from "node:os";
+import {
+  existsSync,
+  readdirSync,
+  statSync,
+  lstatSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  mkdirSync,
+  chmodSync,
+} from "node:fs";
 import type { AgentSource } from "@plan-review/shared";
 import {
   installDaemon,
@@ -11,6 +22,7 @@ import {
   brokerEntryPath,
   bunPath,
 } from "@plan-review/broker/daemon";
+import { dataDir } from "@plan-review/broker/paths";
 import { attach, baseUrl, createSession, health, postAnswer, reworkDone, waitForEvents } from "./client";
 
 interface Args {
@@ -134,6 +146,204 @@ function ensureViewerFresh(): void {
   else console.error("⚠️  viewer rebuild failed — launching the existing build (it may be stale). Rebuild manually: cd apps/viewer && bun run tauri build --no-bundle");
 }
 
+// ---- setup / teardown (run by the bun postinstall hook and `bun run uninstall`) ----
+
+/** Claude Code's config dir — where skills/scripts are discovered. Honours CLAUDE_CONFIG_DIR. */
+function claudeDir(): string {
+  return process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude");
+}
+
+/** The symlinks setup creates: each <link> in Claude's config dir -> a path in this repo. */
+function managedLinks(): { link: string; target: string }[] {
+  const root = repoRoot();
+  const cdir = claudeDir();
+  return [
+    { link: join(cdir, "skills", "plan-review"), target: join(root, "skills", "plan-review") },
+    { link: join(cdir, "scripts", "plan-review"), target: join(root, "scripts", "plan-review") },
+  ];
+}
+
+function isSymlink(p: string): boolean {
+  try {
+    return lstatSync(p).isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
+function cargoAvailable(): boolean {
+  return !!Bun.which("cargo");
+}
+
+function warnStep(name: string, err: unknown): void {
+  console.warn(`  ⚠️  ${name} step failed (continuing): ${err instanceof Error ? err.message : err}`);
+}
+
+/** Create/refresh a symlink, refusing to clobber a real (non-symlink) file. */
+function linkInto(linkPath: string, target: string): void {
+  mkdirSync(dirname(linkPath), { recursive: true });
+  // existsSync follows the link, so a dangling symlink reads as absent here — fall
+  // through and replace it. A *real* file (not a symlink) is left untouched.
+  if (existsSync(linkPath) && !isSymlink(linkPath)) {
+    console.warn(`  ⚠️  ${linkPath} exists and is not a symlink — leaving it untouched`);
+    return;
+  }
+  rmSync(linkPath, { force: true });
+  symlinkSync(target, linkPath);
+  console.log(`  ✓ ${linkPath} -> ${target}`);
+}
+
+/**
+ * Post-deps setup, run by the bun `postinstall` hook (and re-runnable via `bun run setup`).
+ * MUST be resilient: postinstall fires on every `bun install`/`bun add`, and a throw here
+ * would fail the whole install. Every step is best-effort; the caller swallows errors.
+ *
+ * - symlinks: cross-platform, cheap, idempotent.
+ * - daemon: macOS-only; a healthy running daemon is left alone (no restart on every `bun add`).
+ * - viewer: macOS-only; built once on a fresh clone (or when stale), but only if Rust is present.
+ *   When Rust is absent it's skipped and built lazily on first `open`.
+ */
+async function runSetup(linksOnly: boolean): Promise<void> {
+  if (process.env.PLAN_REVIEW_SKIP_SETUP === "1") {
+    console.log("PLAN_REVIEW_SKIP_SETUP=1 — skipping plan-review setup.");
+    return;
+  }
+  console.log("▶ plan-review setup");
+
+  try {
+    const links = managedLinks();
+    // The CLI wrapper must be executable (the skill invokes it directly).
+    for (const { target } of links) {
+      if (target.endsWith(join("scripts", "plan-review"))) {
+        try {
+          chmodSync(target, 0o755);
+        } catch {
+          /* not fatal */
+        }
+      }
+    }
+    for (const { link, target } of links) linkInto(link, target);
+  } catch (e) {
+    warnStep("symlinks", e);
+  }
+
+  if (linksOnly) {
+    console.log("(--links-only: skipped daemon + viewer build.)");
+    return;
+  }
+
+  if (process.platform !== "darwin") {
+    console.log("  • non-macOS host — skipping broker daemon + viewer build (macOS-only).");
+    return;
+  }
+
+  // Daemon: leave a healthy daemon running; only (re)bootstrap if absent or down.
+  try {
+    if (daemonInstalled() && (await health())) {
+      console.log("  ✓ broker daemon already running");
+    } else {
+      const { plistPath } = installDaemon();
+      console.log(`  ✓ broker daemon installed: ${plistPath}`);
+    }
+  } catch (e) {
+    warnStep("daemon", e);
+  }
+
+  // Viewer: build once now so the agent's first `open` doesn't stall on a Rust compile.
+  try {
+    const root = repoRoot();
+    const srcPaths = viewerSourcePaths(root);
+    if (srcPaths.length === 0) {
+      // no source tree — nothing to build (shouldn't happen from a clone)
+    } else if (!cargoAvailable()) {
+      console.log("  • Rust (cargo) not found — skipping viewer build; it'll build on first `open`.");
+    } else {
+      const bin = findViewerBinary();
+      if (bin && !viewerStale(srcPaths, bin)) {
+        console.log("  ✓ viewer build up to date");
+      } else {
+        console.log(
+          bin
+            ? "  • viewer source changed — rebuilding…"
+            : "  • building viewer (first run compiles Rust — this can take a few minutes)…",
+        );
+        const res = Bun.spawnSync(["bun", "run", "tauri", "build", "--no-bundle"], {
+          cwd: join(root, "apps/viewer"),
+          stdout: "inherit",
+          stderr: "inherit",
+        });
+        console.log(res.exitCode === 0 ? "  ✓ viewer built" : "  ⚠️  viewer build failed — it'll retry on first `open`.");
+      }
+    }
+  } catch (e) {
+    warnStep("viewer", e);
+  }
+
+  console.log("plan-review setup complete.");
+}
+
+/**
+ * Reverse what setup added: remove our symlinks and the broker daemon. Run before
+ * deleting the clone — no hook fires on `rm -rf`. Preserves ~/.plan-review (review
+ * history + logs) unless `purge` is set.
+ */
+async function runTeardown(purge: boolean): Promise<void> {
+  console.log("▶ plan-review teardown");
+  let canonRoot = repoRoot();
+  try {
+    canonRoot = realpathSync(canonRoot);
+  } catch {
+    /* keep non-canonical */
+  }
+
+  // Remove each symlink only if it's a symlink resolving into THIS repo (don't clobber
+  // a link a different clone owns). A dangling link in our managed path is ours to remove.
+  for (const { link } of managedLinks()) {
+    try {
+      if (!isSymlink(link)) {
+        if (existsSync(link)) console.log(`  • ${link} is not our symlink — leaving it`);
+        continue;
+      }
+      let dest = "";
+      try {
+        dest = realpathSync(link);
+      } catch {
+        /* dangling — almost certainly ours; fall through and remove */
+      }
+      if (dest && dest !== canonRoot && !dest.startsWith(canonRoot + "/")) {
+        console.log(`  • ${link} -> ${dest} (not this repo) — leaving it`);
+        continue;
+      }
+      rmSync(link, { force: true });
+      console.log(`  ✓ removed ${link}`);
+    } catch (e) {
+      warnStep(`remove ${link}`, e);
+    }
+  }
+
+  if (process.platform === "darwin") {
+    try {
+      uninstallDaemon();
+      console.log("  ✓ removed broker daemon (LaunchAgent)");
+    } catch (e) {
+      warnStep("daemon", e);
+    }
+  }
+
+  if (purge) {
+    try {
+      rmSync(dataDir(), { recursive: true, force: true });
+      console.log(`  ✓ purged ${dataDir()} (review history + logs)`);
+    } catch (e) {
+      warnStep("purge", e);
+    }
+  } else {
+    console.log(`  • kept ${dataDir()} (review history). Pass --purge to remove it.`);
+  }
+
+  console.log("plan-review teardown complete.");
+}
+
 function launchViewer(sid: string, abspath: string): void {
   const bin = findViewerBinary();
   if (bin) {
@@ -157,6 +367,21 @@ async function main(): Promise<void> {
   const cmd = positionals[0];
 
   switch (cmd) {
+    // ---- install lifecycle (bun postinstall hook + `bun run uninstall`) ----
+    case "setup": {
+      // Must never fail the install: swallow anything that escapes per-step handling.
+      try {
+        await runSetup(!!flags["links-only"]);
+      } catch (err) {
+        console.warn(`  ⚠️  setup error (continuing): ${err instanceof Error ? err.message : err}`);
+      }
+      return; // never set exitCode — a non-zero postinstall aborts `bun install`
+    }
+    case "teardown": {
+      await runTeardown(!!flags.purge);
+      return;
+    }
+
     // ---- daemon management ----
     case "install": {
       const { plistPath } = installDaemon();
@@ -238,6 +463,7 @@ async function main(): Promise<void> {
         [
           "plan-review — markdown plan review tool",
           "",
+          "Setup:   setup [--links-only] | teardown [--purge]   (run by `bun install` / `bun run uninstall`)",
           "Daemon:  install | uninstall | restart | status",
           "User:    open <plan.md>",
           "Agent:   attach <sid> --path <plan.md> --source <agent|spawned>",

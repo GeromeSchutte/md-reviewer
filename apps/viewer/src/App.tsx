@@ -247,9 +247,22 @@ export default function App() {
                   <Button
                     variant="destructive"
                     size="sm"
-                    onClick={() => {
-                      endSession(sid);
+                    onClick={async () => {
                       setEndOpen(false);
+                      // Await the end signal before tearing the webview down — closing the
+                      // window would otherwise cancel the in-flight request.
+                      try {
+                        await endSession(sid);
+                      } catch {
+                        /* best-effort; close this plan's window regardless */
+                      }
+                      if (isMock()) return;
+                      try {
+                        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+                        await getCurrentWindow().close();
+                      } catch {
+                        /* not running inside Tauri (browser/dev) */
+                      }
                     }}
                   >
                     End session

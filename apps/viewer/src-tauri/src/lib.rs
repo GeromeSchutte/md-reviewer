@@ -1,5 +1,5 @@
 use serde::Serialize;
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 /// The session/plan the viewer was launched for, set by the CLI via env
 /// (PLAN_REVIEW_SESSION / PLAN_REVIEW_PATH). Kept as a fallback: each window now
@@ -114,20 +114,6 @@ pub fn run() {
             let (session, path) = launch_args();
             open_plan_window(app.handle(), session, path);
             Ok(())
-        })
-        .on_window_event(|window, event| {
-            // Quit once the last window closes — no lingering window-less app in the dock.
-            if let WindowEvent::Destroyed = event {
-                let app = window.app_handle();
-                let remaining = app
-                    .webview_windows()
-                    .into_keys()
-                    .filter(|l| l.as_str() != window.label())
-                    .count();
-                if remaining == 0 {
-                    app.exit(0);
-                }
-            }
         })
         .invoke_handler(tauri::generate_handler![launch_target])
         .run(tauri::generate_context!())

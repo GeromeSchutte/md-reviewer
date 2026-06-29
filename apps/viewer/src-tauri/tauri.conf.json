@@ -1,6 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "plan-review",
+  "productName": "Plan Review",
+  "mainBinaryName": "plan-review",
   "version": "0.1.0",
   "identifier": "ai.plan-review.viewer",
   "build": {

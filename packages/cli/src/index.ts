@@ -76,16 +76,17 @@ function repoRoot(): string {
 }
 
 /**
- * Find the built Tauri viewer binary. Only release builds embed the frontend and
- * run standalone — the debug build loads the Vite dev URL and would show a blank
- * window when launched without `tauri dev`, so it's deliberately excluded here.
+ * Find the built Tauri viewer binary inside its `.app` bundle. We launch the bundled
+ * binary (not the raw `target/release/plan-review`) so macOS picks up the app icon and
+ * "Plan Review" name from the enclosing bundle's Info.plist — a raw binary shows the
+ * generic executable icon and an "app" tooltip instead. Only release builds embed the
+ * frontend and run standalone; the debug build loads the Vite dev URL, so it's excluded.
  */
 function findViewerBinary(): string | undefined {
   const root = repoRoot();
   const candidates = [
     process.env.PLAN_REVIEW_VIEWER_BIN,
-    join(root, "apps/viewer/src-tauri/target/release/bundle/macos/plan-review.app/Contents/MacOS/plan-review"),
-    join(root, "apps/viewer/src-tauri/target/release/app"),
+    join(root, "apps/viewer/src-tauri/target/release/bundle/macos/Plan Review.app/Contents/MacOS/plan-review"),
   ].filter((p): p is string => !!p);
   return candidates.find((p) => existsSync(p));
 }
@@ -137,13 +138,13 @@ function ensureViewerFresh(): void {
   const bin = findViewerBinary();
   if (bin && !viewerStale(srcPaths, bin)) return;
   console.log(bin ? "viewer source changed since last build — rebuilding…" : "no viewer build found — building…");
-  const res = Bun.spawnSync(["bun", "run", "tauri", "build", "--no-bundle"], {
+  const res = Bun.spawnSync(["bun", "run", "tauri", "build", "--bundles", "app"], {
     cwd: join(root, "apps/viewer"),
     stdout: "inherit",
     stderr: "inherit",
   });
   if (res.exitCode === 0) console.log("viewer rebuilt.");
-  else console.error("⚠️  viewer rebuild failed — launching the existing build (it may be stale). Rebuild manually: cd apps/viewer && bun run tauri build --no-bundle");
+  else console.error("⚠️  viewer rebuild failed — launching the existing build (it may be stale). Rebuild manually: cd apps/viewer && bun run tauri build --bundles app");
 }
 
 // ---- setup / teardown (run by the bun postinstall hook and `bun run uninstall`) ----
@@ -267,7 +268,7 @@ async function runSetup(linksOnly: boolean): Promise<void> {
             ? "  • viewer source changed — rebuilding…"
             : "  • building viewer (first run compiles Rust — this can take a few minutes)…",
         );
-        const res = Bun.spawnSync(["bun", "run", "tauri", "build", "--no-bundle"], {
+        const res = Bun.spawnSync(["bun", "run", "tauri", "build", "--bundles", "app"], {
           cwd: join(root, "apps/viewer"),
           stdout: "inherit",
           stderr: "inherit",
@@ -360,7 +361,7 @@ function launchViewer(sid: string, abspath: string): void {
   } else {
     console.log(`session ${sid} ready for ${abspath} (broker at ${baseUrl()})`);
     console.log("no release viewer found — build it once with:");
-    console.log("  cd apps/viewer && bun run tauri build --no-bundle");
+    console.log("  cd apps/viewer && bun run tauri build --bundles app");
     console.log(`(for development: cd apps/viewer && bun run tauri dev, then open ?session=${sid})`);
   }
 }

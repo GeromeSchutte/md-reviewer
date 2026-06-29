@@ -1,6 +1,7 @@
 {
   "name": "planning-tool",
   "private": true,
+  "license": "SEE LICENSE IN LICENSE",
   "type": "module",
   "workspaces": [
     "packages/*",

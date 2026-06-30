@@ -35,7 +35,7 @@ plan-review wait <sid>
 
 This long-polls (up to ~4 minutes) and prints `{"events": [ ... ]}`. Handle the batch **in order**, then **immediately call `wait` again**. Only stop when you receive an `end` event.
 
-- **`{"type":"question", "id", "anchor", "text", "pendingFeedback":[...]}`** — Answer it from your context and the plan. The `anchor` (if present) is the `{startLine,endLine}` the user selected; `pendingFeedback` is the feedback they have left so far (so you don't contradict it). Post your answer as markdown via stdin:
+- **`{"type":"question", "id", "anchor", "text", "pendingFeedback":[...], "thread":[...]}`** — Answer it from your context and the plan. The `anchor` (if present) is the `{startLine,endLine}` the user selected; `pendingFeedback` is the feedback they have left so far (so you don't contradict it). `thread` is the prior answered turns in this question's conversation (`[{text, answerMarkdown}, …]`, oldest→newest, empty for a first question) — when it's non-empty you're answering a **follow-up**, so answer in light of those turns. Post your answer as markdown via stdin:
 
   ```
   plan-review answer <sid> <question-id> <<'ANSWER'
@@ -45,7 +45,7 @@ This long-polls (up to ~4 minutes) and prints `{"events": [ ... ]}`. Handle the 
 
   If you genuinely cannot answer, report an error instead: `plan-review answer <sid> <question-id> --error "why"`.
 
-- **`{"type":"finalize", "batch":[...], "reviewNote": "..."}`** — The user submitted their review. `batch` is every feedback comment (each with optional `anchor` and `text`); `reviewNote` is their overall note (may be null). **Rework the plan file** at the absolute plan path to address all of it, editing the file directly. When done:
+- **`{"type":"finalize", "batch":[...], "reviewNote": "..."}`** — The user submitted their review. `batch` is every feedback comment (each with optional `anchor` and `text`, and an optional `sourceQuestion` — `{id, text, answerMarkdown}` — when the comment was raised from a Q&A exchange, so you have that context for the rework); `reviewNote` is their overall note (may be null). **Rework the plan file** at the absolute plan path to address all of it, editing the file directly. When done:
 
   ```
   plan-review rework-done <sid>

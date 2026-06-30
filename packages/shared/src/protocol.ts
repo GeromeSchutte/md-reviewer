@@ -64,17 +64,21 @@ export const CreateSessionResponse = z.object({
 });
 export type CreateSessionResponse = z.infer<typeof CreateSessionResponse>;
 
-/** POST /sessions/:sid/questions */
+/** POST /sessions/:sid/questions. `parentId` (when set) makes this a follow-up: the
+ *  broker inherits the parent's thread + anchor, so the client need not resend them. */
 export const CreateQuestionRequest = z.object({
   anchor: Anchor.nullish(),
   text: z.string().min(1),
+  parentId: z.string().nullish(),
 });
 export type CreateQuestionRequest = z.infer<typeof CreateQuestionRequest>;
 
-/** POST /sessions/:sid/feedback */
+/** POST /sessions/:sid/feedback. `sourceQuestionId` (when set) records that this review
+ *  item came from a Q&A exchange; the broker resolves it into the finalize batch. */
 export const CreateFeedbackRequest = z.object({
   anchor: Anchor.nullish(),
   text: z.string().min(1),
+  sourceQuestionId: z.string().nullish(),
 });
 export type CreateFeedbackRequest = z.infer<typeof CreateFeedbackRequest>;
 

@@ -21,13 +21,22 @@ export type ReworkResult = z.infer<typeof ReworkResult>;
 // and the finalize batch so it never wakes the agent on its own.
 // ---------------------------------------------------------------------------
 
-/** A trimmed feedback shape attached to question/finalize events for context. */
+/** A trimmed feedback shape attached to question/finalize events for context.
+ *  `sourceQuestion` is the broker-resolved Q&A exchange a review item came from
+ *  (Tier 2) — so the rework agent has the substance, not just an id. */
 export const PendingFeedback = z.object({
   id: z.string(),
   anchor: Anchor.nullable(),
   text: z.string(),
+  sourceQuestion: z
+    .object({ id: z.string(), text: z.string(), answerMarkdown: z.string().nullable() })
+    .nullish(),
 });
 export type PendingFeedback = z.infer<typeof PendingFeedback>;
+
+/** One prior answered turn in a Q&A thread, oldest→newest. */
+export const ThreadTurn = z.object({ text: z.string(), answerMarkdown: z.string() });
+export type ThreadTurn = z.infer<typeof ThreadTurn>;
 
 export const QuestionEvent = z.object({
   type: z.literal("question"),
@@ -35,6 +44,9 @@ export const QuestionEvent = z.object({
   anchor: Anchor.nullable(),
   text: z.string(),
   pendingFeedback: z.array(PendingFeedback),
+  /** Prior answered turns in this question's thread (empty for a root question), so a
+   *  spawned/compacted agent can answer a follow-up in context. */
+  thread: z.array(ThreadTurn),
 });
 export type QuestionEvent = z.infer<typeof QuestionEvent>;
 

@@ -70,6 +70,15 @@ export const QuestionRecord = z.object({
   answeredAt: z.number().nullable(),
   errorMessage: z.string().nullable(),
   agentSource: AgentSource.nullable(),
+  /**
+   * Threading (Q&A follow-ups). `threadId` is the root question's id — a root's
+   * own id — so a whole conversation groups by one value; `parentId` is the exact
+   * turn a follow-up replies to (`null` for a root). Optional so older records and
+   * optimistic skeletons read as their own single-turn thread (a missing `threadId`
+   * is treated as the row's own id by the viewer's defensive grouping).
+   */
+  threadId: z.string().optional(),
+  parentId: z.string().nullish(),
 });
 export type QuestionRecord = z.infer<typeof QuestionRecord>;
 
@@ -82,5 +91,12 @@ export const FeedbackRecord = z.object({
   createdAt: z.number(),
   kind: FeedbackKind,
   status: FeedbackStatus,
+  /**
+   * Set when this review item was created from a Q&A exchange (Tier 2). It's the
+   * back-reference the viewer renders as a "from Q&A" indicator and that the broker
+   * resolves into the finalize batch so the rework agent has the source Q&A. `null`
+   * for ordinary, line-anchored feedback.
+   */
+  sourceQuestionId: z.string().nullish(),
 });
 export type FeedbackRecord = z.infer<typeof FeedbackRecord>;

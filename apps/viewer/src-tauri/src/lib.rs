@@ -1,5 +1,25 @@
 use serde::Serialize;
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{
+    menu::{Menu, MenuItem},
+    AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder,
+};
+
+/// Event the frontend listens for to open its update dialog. Emitted by the
+/// "Check for Updates…" menu item; mirrors the in-window update button.
+const CHECK_FOR_UPDATES_EVENT: &str = "check-for-updates";
+
+/// Build the app's menu: the platform default (so Edit/Copy/Paste/Quit, Window, etc.
+/// keep working) plus a "Check for Updates…" item placed under the application menu.
+/// Falls back to the bare default if the app submenu can't be located.
+fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
+    let menu = Menu::default(app)?;
+    let check = MenuItem::with_id(app, CHECK_FOR_UPDATES_EVENT, "Check for Updates…", true, None::<&str>)?;
+    // The application menu is the first submenu; slot the item just under "About".
+    if let Some(app_submenu) = menu.items()?.first().and_then(|i| i.as_submenu().cloned()) {
+        let _ = app_submenu.insert(&check, 1);
+    }
+    Ok(menu)
+}
 
 /// The session/plan the viewer was launched for, set by the CLI via env
 /// (PLAN_REVIEW_SESSION / PLAN_REVIEW_PATH). Kept as a fallback: each window now
@@ -111,9 +131,28 @@ pub fn run() {
                         .build(),
                 )?;
             }
+            app.set_menu(build_menu(app.handle())?)?;
             let (session, path) = launch_args();
             open_plan_window(app.handle(), session, path);
             Ok(())
+        })
+        // "Check for Updates…" → tell the focused plan window to open its update dialog
+        // (the same one the in-window button opens). One menu, the active window reacts.
+        .on_menu_event(|app, event| {
+            if event.id().as_ref() == CHECK_FOR_UPDATES_EVENT {
+                let focused = app
+                    .webview_windows()
+                    .into_values()
+                    .find(|w| w.is_focused().unwrap_or(false));
+                match focused {
+                    Some(win) => {
+                        let _ = win.emit(CHECK_FOR_UPDATES_EVENT, ());
+                    }
+                    None => {
+                        let _ = app.emit(CHECK_FOR_UPDATES_EVENT, ());
+                    }
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![launch_target])
         .run(tauri::generate_context!())

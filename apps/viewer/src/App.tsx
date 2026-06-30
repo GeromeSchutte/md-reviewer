@@ -26,6 +26,7 @@ import type {
 } from "@plan-review/shared";
 import { MarkdownView } from "./components/MarkdownView";
 import { Toc } from "./components/Toc";
+import { UpdateControl } from "./components/UpdateControl";
 import { type ComposerMode } from "./components/Composer";
 import { anchorLabel } from "./selection";
 import { jumpTo, parseToc, useScrollSpy } from "./toc";
@@ -314,6 +315,8 @@ export default function App() {
           <span className="font-mono text-[0.65rem] tracking-wide text-destructive uppercase">offline</span>
         )}
         <div className="ml-auto flex items-center gap-1.5">
+          <UpdateControl />
+          <div className="mx-0.5 h-5 w-px bg-border" />
           <Popover.Root open={endOpen} onOpenChange={setEndOpen}>
             <Popover.Trigger asChild>
               <Button

@@ -76,6 +76,16 @@ State created **outside the repo** (this is what [rollback](#roll-back--uninstal
 
 Everything else (`node_modules/`, `apps/viewer/src-tauri/target/`) lives inside the repo and disappears when you delete the clone.
 
+## Updating
+
+The tool runs from this clone, so updating means fast-forwarding it to the latest `origin/main` and re-running setup. Three equivalent ways:
+
+- **In the viewer** — click the **update** button in the window header (a dot marks an available update), or choose **Plan Review → Check for Updates…** from the macOS menu bar. The dialog lists what's new; **Update now** fetches, reinstalls, and rebuilds, then the window reconnects to the freshly built broker — reopen the plan to load the new UI.
+- **`bun run update`** — the same engine from a terminal.
+- **`plan-review update`** — check only; add `--apply` to apply (`--json` for machine-readable status).
+
+Updates are **fast-forward only** and are **refused if the working tree is dirty or the branch has diverged** (commit, stash, or `git pull --rebase` first — the updater never discards local work). The fetch uses HTTPS, so it works even from the daemon with no ssh-agent. Update output is logged to `~/.plan-review/update.log`. See **[CHANGELOG.md](./CHANGELOG.md)** for the release history.
+
 ## Roll back / uninstall
 
 Run this **before deleting the clone** — nothing fires on `rm -rf`, so a deleted repo would otherwise orphan the LaunchAgent and leave dangling symlinks behind.

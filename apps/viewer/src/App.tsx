@@ -13,7 +13,6 @@ import {
   PanelRightClose,
   PanelRightOpen,
   PenLine,
-  Plus,
   Reply,
   X,
 } from "lucide-react";
@@ -27,7 +26,7 @@ import type {
 } from "@plan-review/shared";
 import { MarkdownView } from "./components/MarkdownView";
 import { Toc } from "./components/Toc";
-import { ComposerBody, type ComposerMode } from "./components/Composer";
+import { type ComposerMode } from "./components/Composer";
 import { anchorLabel } from "./selection";
 import { jumpTo, parseToc, useScrollSpy } from "./toc";
 import { resolveSession } from "./launch";
@@ -68,7 +67,6 @@ export default function App() {
   const [state, setState] = useState<LifecycleState>("no-agent");
   const [reworkResult, setReworkResult] = useState<ReworkResult | null>(null);
   const [tab, setTab] = useState<Tab>("review");
-  const [generalOpen, setGeneralOpen] = useState(false);
   const [endOpen, setEndOpen] = useState(false);
   const [reviewNote, setReviewNote] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -316,30 +314,6 @@ export default function App() {
           <span className="font-mono text-[0.65rem] tracking-wide text-destructive uppercase">offline</span>
         )}
         <div className="ml-auto flex items-center gap-1.5">
-          <Popover.Root open={generalOpen} onOpenChange={setGeneralOpen}>
-            <Popover.Trigger asChild>
-              <Button variant="outline" size="sm">
-                <Plus /> New note
-              </Button>
-            </Popover.Trigger>
-            <Popover.Portal>
-              <Popover.Content
-                align="end"
-                sideOffset={8}
-                onOpenAutoFocus={(e) => e.preventDefault()}
-                className="z-50 w-80 rounded-lg border border-border bg-popover p-3 text-popover-foreground shadow-xl outline-none"
-              >
-                <ComposerBody
-                  label="general · not tied to a line"
-                  onSubmit={(text, mode) => {
-                    void submitAnnotation(null, text, mode);
-                    setGeneralOpen(false);
-                  }}
-                  onCancel={() => setGeneralOpen(false)}
-                />
-              </Popover.Content>
-            </Popover.Portal>
-          </Popover.Root>
           <Popover.Root open={endOpen} onOpenChange={setEndOpen}>
             <Popover.Trigger asChild>
               <Button
@@ -628,7 +602,7 @@ function QAPanel({
       <div className="min-h-0 flex-1 overflow-auto p-3">
         {questions.length === 0 ? (
           <Empty icon={MessageSquareText} title="No questions yet">
-            Select lines in the document, ask below, or use “New note”.
+            Select lines in the document, or ask below.
           </Empty>
         ) : (
           <ul className="space-y-2.5">

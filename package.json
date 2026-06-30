@@ -15,6 +15,7 @@
     "uninstall": "bun packages/cli/src/index.ts teardown",
     "broker": "bun run packages/broker/src/index.ts",
     "cli": "bun run packages/cli/src/index.ts",
+    "update": "bash scripts/update",
     "tauri:build": "bun run --filter '@plan-review/viewer' tauri build",
     "typecheck": "tsc --build",
     "test": "bun test"

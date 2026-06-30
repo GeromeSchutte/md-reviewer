@@ -6,8 +6,12 @@ import { FileWatcher } from "./watcher";
 import { pidfilePath, brokerLogPath } from "./paths";
 import { makeSpawner } from "./spawner";
 import { createLogger } from "./logger";
+import { currentSha, currentVersion } from "./updater";
 
-const VERSION = "0.0.0";
+// Sourced from the repo (root package.json + git HEAD) rather than hardcoded, so
+// /health reflects the running checkout — the signal the viewer polls after an update.
+const VERSION = currentVersion();
+const SHA = currentSha();
 // Bun caps idleTimeout at 255s; our long-poll hold (240s) fits under it.
 const IDLE_TIMEOUT = 255;
 
@@ -15,6 +19,7 @@ function main(): void {
   const log = createLogger();
   const broker = new Broker({
     version: VERSION,
+    sha: SHA,
     log,
     onSessionOpened: (abspath) => watcher.watch(abspath),
     spawnAgent: (info) => spawner(info),

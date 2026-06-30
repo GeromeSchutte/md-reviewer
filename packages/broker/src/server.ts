@@ -12,6 +12,7 @@ import {
   type ServerEvent,
 } from "@plan-review/shared";
 import { Broker, SessionNotFound } from "./broker";
+import { applyUpdate, checkForUpdate } from "./updater";
 
 export function createServer(broker: Broker): Hono {
   const app = new Hono();
@@ -23,6 +24,10 @@ export function createServer(broker: Broker): Hono {
   });
 
   app.get("/health", (c) => c.json(broker.health));
+
+  // ---- self-update (global; not session-scoped) ----
+  app.get("/update/check", async (c) => c.json(await checkForUpdate()));
+  app.post("/update/apply", async (c) => c.json(await applyUpdate()));
 
   // ---- viewer-side ----
   app.post("/sessions", async (c) => {

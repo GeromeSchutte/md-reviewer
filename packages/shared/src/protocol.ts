@@ -99,8 +99,55 @@ export const HealthResponse = z.object({
   ok: z.literal(true),
   sessions: z.number(),
   version: z.string(),
+  /** The checked-out commit the broker is running from. Lets the viewer detect when
+   *  an applied update has landed (the restarted broker reports the new sha). */
+  sha: z.string().optional(),
 });
 export type HealthResponse = z.infer<typeof HealthResponse>;
+
+// ---------------------------------------------------------------------------
+// Self-update endpoints (global — an update affects the whole install)
+// ---------------------------------------------------------------------------
+
+export const UpdateCommit = z.object({
+  sha: z.string(),
+  subject: z.string(),
+});
+export type UpdateCommit = z.infer<typeof UpdateCommit>;
+
+/** GET /update/check — read-only status of this clone vs. its upstream branch. */
+export const UpdateStatus = z.object({
+  /** Human-readable version from the root package.json. */
+  version: z.string(),
+  branch: z.string(),
+  /** Currently checked-out commit. */
+  sha: z.string(),
+  /** Latest upstream commit (after fetching over HTTPS). Null if the check failed. */
+  remoteSha: z.string().nullable(),
+  /** Commits on the upstream branch not yet checked out (how far behind we are). */
+  behind: z.number(),
+  /** Local commits not on the upstream branch (diverged when > 0). */
+  ahead: z.number(),
+  /** Working tree has no uncommitted changes — required to apply. */
+  clean: z.boolean(),
+  /** behind > 0 && ahead === 0 && clean — an update can be applied. */
+  canApply: z.boolean(),
+  /** Newest-first subjects of the commits we're behind by (capped). */
+  commits: z.array(UpdateCommit),
+  /** Set when the check itself failed (offline, git error); other fields best-effort. */
+  error: z.string().nullable(),
+});
+export type UpdateStatus = z.infer<typeof UpdateStatus>;
+
+/** POST /update/apply — kicks off `scripts/update` detached and returns immediately.
+ *  `started: false` means a pre-flight guard refused (dirty/diverged/up-to-date). */
+export const UpdateApplyResponse = z.object({
+  started: z.boolean(),
+  /** When started, the commit the viewer should poll /health for. */
+  targetSha: z.string().nullable(),
+  error: z.string().nullable(),
+});
+export type UpdateApplyResponse = z.infer<typeof UpdateApplyResponse>;
 
 /** Canonical endpoint paths (relative to the broker base URL). */
 export const routes = {
@@ -118,4 +165,6 @@ export const routes = {
   feedbackItem: (sid: string, id: string) => `/sessions/${sid}/feedback/${id}`,
   finalize: (sid: string) => `/sessions/${sid}/finalize`,
   end: (sid: string) => `/sessions/${sid}/end`,
+  updateCheck: "/update/check",
+  updateApply: "/update/apply",
 } as const;

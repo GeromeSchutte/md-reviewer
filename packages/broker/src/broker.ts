@@ -47,6 +47,9 @@ export interface BrokerOptions {
   /** Grace period after the last viewer disconnects before the agent is sent `end`. */
   disconnectGraceMs?: number;
   version?: string;
+  /** The checked-out commit the daemon is running from; surfaced on /health so the
+   *  viewer can detect when an applied update has landed. */
+  sha?: string;
   /** Spawn a headless agent for a session that has no agent attached (user-opened path). */
   spawnAgent?: (info: { sid: string; abspath: string; title: string }) => void;
   /** Start watching a plan file for live updates when its session first opens. */
@@ -62,6 +65,7 @@ export class Broker {
   private readonly holdMs: number;
   private readonly disconnectGraceMs: number;
   private readonly version: string;
+  private readonly sha: string;
   private readonly spawnAgent?: BrokerOptions["spawnAgent"];
   private readonly onSessionOpened?: BrokerOptions["onSessionOpened"];
   private readonly log: Logger;
@@ -73,6 +77,7 @@ export class Broker {
     this.holdMs = opts.holdMs ?? 240_000;
     this.disconnectGraceMs = opts.disconnectGraceMs ?? 120_000;
     this.version = opts.version ?? "0.0.0";
+    this.sha = opts.sha ?? "";
     this.spawnAgent = opts.spawnAgent;
     this.onSessionOpened = opts.onSessionOpened;
     this.log = opts.log ?? silentLogger;
@@ -82,7 +87,7 @@ export class Broker {
     return this.sessions.size;
   }
   get health() {
-    return { ok: true as const, sessions: this.sessions.size, version: this.version };
+    return { ok: true as const, sessions: this.sessions.size, version: this.version, sha: this.sha };
   }
 
   // ---- session lifecycle -------------------------------------------------

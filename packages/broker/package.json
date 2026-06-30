@@ -7,7 +7,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./daemon": "./src/daemon.ts",
-    "./paths": "./src/paths.ts"
+    "./paths": "./src/paths.ts",
+    "./updater": "./src/updater.ts"
   },
   "bin": {
     "plan-review-broker": "src/index.ts"

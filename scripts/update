@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# Update a clone of this repo in place: fast-forward the current branch to its
+# upstream and re-run setup. This is the engine behind `bun run update`, the CLI
+# `plan-review update --apply`, and the viewer's in-app updater (the broker spawns
+# this script). Safe by construction:
+#   - refuses if the working tree is dirty (never clobbers local changes),
+#   - fetches over HTTPS (works without an ssh-agent — e.g. from the LaunchAgent),
+#   - merges --ff-only (refuses a diverged branch rather than creating a merge),
+#   - re-runs `bun install` (symlinks + daemon + viewer rebuild via the setup hooks),
+#   - restarts the daemon so the freshly pulled broker code is the one running.
+set -euo pipefail
+
+say()  { echo "▶ $*"; }
+fail() { echo "✗ $*" >&2; exit 1; }
+
+# Resolve this script's real location, following symlinks (BSD/macOS-safe).
+src="${BASH_SOURCE[0]}"
+while [ -h "$src" ]; do
+  dir="$(cd -P "$(dirname "$src")" && pwd)"
+  src="$(readlink "$src")"
+  [[ "$src" != /* ]] && src="$dir/$src"
+done
+repo="$(cd -P "$(dirname "$src")/.." && pwd)"
+cd "$repo"
+
+command -v git >/dev/null 2>&1 || fail "git not found on PATH"
+
+branch="$(git rev-parse --abbrev-ref HEAD)"
+[ "$branch" = "HEAD" ] && fail "detached HEAD — check out a branch before updating"
+
+# Never discard local work: a dirty tree aborts before we touch anything.
+if [ -n "$(git status --porcelain)" ]; then
+  fail "working tree has local changes — commit, stash, or discard them first, then re-run."
+fi
+
+# Fetch over HTTPS regardless of how `origin` is configured, so this works from a
+# context with no ssh-agent (the broker daemon). Public repo => no auth needed.
+origin_url="$(git remote get-url origin)"
+case "$origin_url" in
+  git@*)        https_url="https://$(printf '%s' "$origin_url" | sed -E 's#^git@([^:]+):#\1/#')" ;;
+  ssh://*)      https_url="https://$(printf '%s' "$origin_url" | sed -E 's#^ssh://(git@)?([^/]+)/#\2/#')" ;;
+  http://*|https://*) https_url="$origin_url" ;;
+  *)            https_url="$origin_url" ;;
+esac
+
+say "fetching $branch from $https_url"
+git fetch --quiet "$https_url" "$branch" || fail "fetch failed (offline, or branch '$branch' missing upstream)"
+
+local_sha="$(git rev-parse HEAD)"
+remote_sha="$(git rev-parse FETCH_HEAD)"
+
+if [ "$local_sha" = "$remote_sha" ]; then
+  echo "✓ already up to date ($branch @ ${local_sha:0:9})"
+  exit 0
+fi
+
+# Only fast-forward: if HEAD isn't an ancestor of the fetched commit the branch has
+# diverged (local commits not upstream). Refuse rather than create a merge commit.
+if ! git merge-base --is-ancestor HEAD FETCH_HEAD; then
+  fail "branch '$branch' has diverged from upstream (local commits not pushed). Resolve manually: git pull --rebase"
+fi
+
+say "fast-forwarding ${local_sha:0:9} → ${remote_sha:0:9}"
+git merge --ff-only --quiet FETCH_HEAD
+
+say "reinstalling (bun install runs setup: symlinks + daemon + viewer rebuild)"
+bun install
+
+# Reload the daemon so the just-pulled broker code is what's running. Setup leaves a
+# healthy daemon untouched, so without this the old broker would keep serving.
+say "restarting broker"
+bun "$repo/packages/cli/src/index.ts" restart || true
+
+echo "✓ updated to ${remote_sha:0:9}"

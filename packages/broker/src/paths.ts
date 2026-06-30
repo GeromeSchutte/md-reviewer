@@ -10,6 +10,8 @@ export const logOutPath = (): string => join(dataDir(), "broker.out.log");
 export const logErrPath = (): string => join(dataDir(), "broker.err.log");
 /** Structured (pino JSON) event log. */
 export const brokerLogPath = (): string => join(dataDir(), "broker.log");
+/** Output of a self-update run (the detached `scripts/update` process). */
+export const updateLogPath = (): string => join(dataDir(), "update.log");
 
 export const LAUNCH_AGENT_LABEL = "ai.plan-review.broker";
 export const launchAgentPlistPath = (): string =>

@@ -23,6 +23,7 @@ import {
   bunPath,
 } from "@plan-review/broker/daemon";
 import { dataDir } from "@plan-review/broker/paths";
+import { checkForUpdate } from "@plan-review/broker/updater";
 import { attach, baseUrl, createSession, health, postAnswer, reworkDone, waitForEvents } from "./client";
 
 interface Args {
@@ -408,6 +409,37 @@ async function main(): Promise<void> {
       console.log(JSON.stringify({ installed: daemonInstalled(), running: !!h, health: h }, null, 2));
       return;
     }
+    case "update": {
+      const status = await checkForUpdate();
+      if (flags.json) {
+        console.log(JSON.stringify(status, null, 2));
+      } else if (status.error) {
+        console.log(`update check failed: ${status.error}`);
+      } else if (status.behind === 0) {
+        console.log(`up to date (${status.branch} @ ${status.sha.slice(0, 9)}, v${status.version})`);
+      } else {
+        console.log(`${status.behind} update${status.behind === 1 ? "" : "s"} available (v${status.version} → ${status.behind} commit${status.behind === 1 ? "" : "s"} behind ${status.branch}):`);
+        for (const c of status.commits) console.log(`  ${c.sha}  ${c.subject}`);
+        if (status.ahead > 0) console.log(`  ⚠️  ${status.ahead} local commit(s) not pushed — branch has diverged.`);
+        if (!status.clean) console.log("  ⚠️  working tree has local changes.");
+      }
+      // --apply runs the same engine the in-app updater drives, in the foreground so
+      // the pull + reinstall + rebuild output streams to the terminal.
+      if (flags.apply) {
+        if (!flags.json && status.behind === 0 && !status.error) return;
+        console.log("\n▶ applying update…");
+        const res = Bun.spawnSync(["bash", join(repoRoot(), "scripts", "update")], {
+          cwd: repoRoot(),
+          stdout: "inherit",
+          stderr: "inherit",
+          stdin: "inherit",
+        });
+        process.exitCode = res.exitCode ?? 0;
+      } else if (!status.error && status.canApply) {
+        console.log("\nRun `plan-review update --apply` (or `bun run update`) to apply.");
+      }
+      return;
+    }
 
     // ---- user ----
     case "open": {
@@ -469,6 +501,7 @@ async function main(): Promise<void> {
           "",
           "Setup:   setup [--links-only] | teardown [--purge]   (run by `bun install` / `bun run uninstall`)",
           "Daemon:  install | uninstall | restart | status",
+          "Update:  update [--apply] [--json]                   (check for / apply updates)",
           "User:    open <plan.md>",
           "Agent:   attach <sid> --path <plan.md> --source <agent|spawned>",
           "         wait <sid>",

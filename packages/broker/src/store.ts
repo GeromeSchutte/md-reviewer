@@ -30,6 +30,10 @@ export class Store {
   }
 
   private migrate(): void {
+    // Fresh DBs get the threading columns directly here; existing DBs (old schema)
+    // are handled by the additive ALTERs below — CREATE TABLE IF NOT EXISTS won't
+    // touch a table that already exists. Keep the new columns nullable: ADD COLUMN
+    // NOT NULL fails on a table that already has rows.
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS plans (
         abspath     TEXT PRIMARY KEY,
@@ -49,7 +53,9 @@ export class Store {
         answer_markdown TEXT,
         answered_at    INTEGER,
         error_message  TEXT,
-        agent_source   TEXT
+        agent_source   TEXT,
+        thread_id      TEXT,
+        parent_id      TEXT
       );
       CREATE TABLE IF NOT EXISTS feedback (
         id          TEXT PRIMARY KEY,
@@ -59,11 +65,28 @@ export class Store {
         text        TEXT NOT NULL,
         created_at  INTEGER NOT NULL,
         kind        TEXT NOT NULL,
-        status      TEXT NOT NULL
+        status      TEXT NOT NULL,
+        source_question_id TEXT
       );
       CREATE INDEX IF NOT EXISTS idx_questions_abspath ON questions(abspath, created_at);
       CREATE INDEX IF NOT EXISTS idx_feedback_abspath ON feedback(abspath, created_at);
     `);
+
+    // Additive migration for DBs created before threading. SQLite has no
+    // ADD COLUMN IF NOT EXISTS, so guard each on PRAGMA table_info.
+    this.addColumn("questions", "thread_id", "TEXT");
+    this.addColumn("questions", "parent_id", "TEXT");
+    this.addColumn("feedback", "source_question_id", "TEXT");
+    // Pre-existing questions are their own single-turn thread (root id = own id).
+    this.db.exec(`UPDATE questions SET thread_id = id WHERE thread_id IS NULL`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_questions_thread ON questions(thread_id, created_at)`);
+  }
+
+  /** Add a column if it isn't already present (idempotent, online, non-destructive). */
+  private addColumn(table: string, column: string, type: string): void {
+    const cols = this.db.query(`PRAGMA table_info(${table})`).all() as { name: string }[];
+    if (cols.some((c) => c.name === column)) return;
+    this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
   }
 
   close(): void {
@@ -101,8 +124,8 @@ export class Store {
     this.db
       .query(
         `INSERT INTO questions
-           (id, abspath, anchor_json, doc_version, text, created_at, status, answer_markdown, answered_at, error_message, agent_source)
-         VALUES ($id, $abspath, $anchor, $docVersion, $text, $createdAt, $status, $answer, $answeredAt, $error, $agentSource)`,
+           (id, abspath, anchor_json, doc_version, text, created_at, status, answer_markdown, answered_at, error_message, agent_source, thread_id, parent_id)
+         VALUES ($id, $abspath, $anchor, $docVersion, $text, $createdAt, $status, $answer, $answeredAt, $error, $agentSource, $threadId, $parentId)`,
       )
       .run({
         $id: q.id,
@@ -116,7 +139,18 @@ export class Store {
         $answeredAt: q.answeredAt,
         $error: q.errorMessage,
         $agentSource: q.agentSource,
+        $threadId: q.threadId ?? q.id,
+        $parentId: q.parentId ?? null,
       });
+  }
+
+  /** Answered turns in a thread, oldest→newest — the transcript for a follow-up. */
+  listThreadAnswered(threadId: string): QuestionRecord[] {
+    return (
+      this.db
+        .query(`SELECT * FROM questions WHERE thread_id = $tid AND status = 'answered' ORDER BY created_at ASC`)
+        .all({ $tid: threadId }) as QuestionRow[]
+    ).map(rowToQuestion);
   }
 
   getQuestion(id: string): QuestionRecord | null {
@@ -174,8 +208,8 @@ export class Store {
   insertFeedback(f: FeedbackRecord): void {
     this.db
       .query(
-        `INSERT INTO feedback (id, abspath, anchor_json, doc_version, text, created_at, kind, status)
-         VALUES ($id, $abspath, $anchor, $docVersion, $text, $createdAt, $kind, $status)`,
+        `INSERT INTO feedback (id, abspath, anchor_json, doc_version, text, created_at, kind, status, source_question_id)
+         VALUES ($id, $abspath, $anchor, $docVersion, $text, $createdAt, $kind, $status, $sourceQuestionId)`,
       )
       .run({
         $id: f.id,
@@ -186,6 +220,7 @@ export class Store {
         $createdAt: f.createdAt,
         $kind: f.kind,
         $status: f.status,
+        $sourceQuestionId: f.sourceQuestionId ?? null,
       });
   }
 
@@ -242,6 +277,8 @@ interface QuestionRow {
   answered_at: number | null;
   error_message: string | null;
   agent_source: string | null;
+  thread_id: string | null;
+  parent_id: string | null;
 }
 interface FeedbackRow {
   id: string;
@@ -252,6 +289,7 @@ interface FeedbackRow {
   created_at: number;
   kind: string;
   status: string;
+  source_question_id: string | null;
 }
 
 function encodeAnchor(anchor: Anchor | null): string | null {
@@ -283,6 +321,8 @@ function rowToQuestion(r: QuestionRow): QuestionRecord {
     answeredAt: r.answered_at,
     errorMessage: r.error_message,
     agentSource: r.agent_source as AgentSource | null,
+    threadId: r.thread_id ?? undefined,
+    parentId: r.parent_id,
   };
 }
 function rowToFeedback(r: FeedbackRow): FeedbackRecord {
@@ -295,5 +335,6 @@ function rowToFeedback(r: FeedbackRow): FeedbackRecord {
     createdAt: r.created_at,
     kind: r.kind as FeedbackKind,
     status: r.status as FeedbackStatus,
+    sourceQuestionId: r.source_question_id,
   };
 }

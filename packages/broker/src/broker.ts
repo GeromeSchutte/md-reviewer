@@ -3,11 +3,14 @@ import { randomUUID } from "node:crypto";
 import type {
   AgentSource,
   Anchor,
+  FeedbackRecord,
   LifecycleState,
   PendingFeedback,
+  QuestionRecord,
   ReviewEvent,
   ReworkResult,
   ServerEvent,
+  ThreadTurn,
 } from "@plan-review/shared";
 import { Store } from "./store";
 import { silentLogger, type Logger } from "./logger";
@@ -176,11 +179,31 @@ export class Broker {
       return queued.map((q): ReviewEvent => {
         this.store.setQuestionStatus(q.id, "in-progress");
         this.broadcast(s, { type: "qa-status", id: q.id, status: "in-progress" });
-        return { type: "question", id: q.id, anchor: q.anchor, text: q.text, pendingFeedback };
+        return {
+          type: "question",
+          id: q.id,
+          anchor: q.anchor,
+          text: q.text,
+          pendingFeedback,
+          thread: this.threadTranscript(q),
+        };
       });
     }
     if (s.pendingControl.length) return [s.pendingControl.shift()!];
     return [];
+  }
+
+  /** Prior answered turns in a question's thread (oldest→newest), so a follow-up is
+   *  answered in context. Empty for a root or a thread with no answered predecessors. */
+  private threadTranscript(q: QuestionRecord): ThreadTurn[] {
+    // The current question is in-progress (not answered), so the thread's *answered*
+    // turns are exactly its prior turns — no fragile timestamp comparison needed
+    // (sibling turns can share a created_at millisecond). The `id` guard is defensive.
+    const threadId = q.threadId ?? q.id;
+    return this.store
+      .listThreadAnswered(threadId)
+      .filter((t) => t.id !== q.id)
+      .map((t) => ({ text: t.text, answerMarkdown: t.answerMarkdown ?? "" }));
   }
 
   /** If an agent is parked in `wait`, hand it the freshly available batch. */
@@ -195,20 +218,44 @@ export class Broker {
   }
 
   private pendingFeedback(s: Session): PendingFeedback[] {
-    return this.store
-      .listFeedbackByStatus(s.abspath, "queued")
-      .map((f) => ({ id: f.id, anchor: f.anchor, text: f.text }));
+    return this.store.listFeedbackByStatus(s.abspath, "queued").map((f) => this.toPending(f));
+  }
+
+  /** Resolve a stored feedback row into the trimmed wire shape, attaching the source
+   *  Q&A exchange (Tier 2) so the rework agent has the substance, not just an id.
+   *  Single resolver so the question-event `pendingFeedback` and the finalize batch
+   *  can never diverge. */
+  private toPending(f: FeedbackRecord): PendingFeedback {
+    let sourceQuestion: PendingFeedback["sourceQuestion"] = null;
+    if (f.sourceQuestionId) {
+      const src = this.store.getQuestion(f.sourceQuestionId);
+      if (src) sourceQuestion = { id: src.id, text: src.text, answerMarkdown: src.answerMarkdown };
+    }
+    return { id: f.id, anchor: f.anchor, text: f.text, sourceQuestion };
   }
 
   // ---- questions ---------------------------------------------------------
 
-  createQuestion(sid: string, anchor: Anchor | null, text: string): string {
+  createQuestion(sid: string, anchor: Anchor | null, text: string, parentId: string | null = null): string {
     const s = this.require(sid);
     const id = randomUUID();
+    // A follow-up inherits its parent's thread + anchor (the source owns the region);
+    // a root question starts a new thread keyed on its own id.
+    let threadId: string = id;
+    let effectiveAnchor = anchor;
+    if (parentId) {
+      const parent = this.store.getQuestion(parentId);
+      if (parent && parent.abspath === s.abspath) {
+        threadId = parent.threadId ?? parent.id;
+        effectiveAnchor = parent.anchor;
+      } else {
+        parentId = null; // unknown parent → treat as a root question
+      }
+    }
     this.store.insertQuestion({
       id,
       abspath: s.abspath,
-      anchor,
+      anchor: effectiveAnchor,
       docVersion: s.docVersion,
       text,
       createdAt: Date.now(),
@@ -217,11 +264,13 @@ export class Broker {
       answeredAt: null,
       errorMessage: null,
       agentSource: null,
+      threadId,
+      parentId,
     });
     this.broadcast(s, { type: "qa-status", id, status: "queued" });
     this.refreshQuestionState(s);
     this.wake(s);
-    this.log.info({ event: "question.created", sid, qid: id, anchored: !!anchor }, "question queued");
+    this.log.info({ event: "question.created", sid, qid: id, anchored: !!effectiveAnchor, followUp: !!parentId }, "question queued");
     return id;
   }
 
@@ -257,22 +306,34 @@ export class Broker {
 
   // ---- feedback (trigger-decoupled: never wakes the agent) ---------------
 
-  createFeedback(sid: string, anchor: Anchor | null, text: string): string {
+  createFeedback(sid: string, anchor: Anchor | null, text: string, sourceQuestionId: string | null = null): string {
     const s = this.require(sid);
     const id = randomUUID();
+    // A review item from a Q&A inherits the source question's anchor when the client
+    // didn't supply one, so it still points at the same lines.
+    let effectiveAnchor = anchor;
+    if (sourceQuestionId) {
+      const src = this.store.getQuestion(sourceQuestionId);
+      if (src && src.abspath === s.abspath) {
+        if (!effectiveAnchor) effectiveAnchor = src.anchor;
+      } else {
+        sourceQuestionId = null; // unknown source → plain feedback
+      }
+    }
     const record = {
       id,
       abspath: s.abspath,
-      anchor,
+      anchor: effectiveAnchor,
       docVersion: s.docVersion,
       text,
       createdAt: Date.now(),
       kind: "comment" as const,
       status: "queued" as const,
+      sourceQuestionId,
     };
     this.store.insertFeedback(record);
     this.broadcast(s, { type: "feedback-ack", feedback: record });
-    this.log.info({ event: "feedback.created", sid, fid: id, anchored: !!anchor }, "feedback added");
+    this.log.info({ event: "feedback.created", sid, fid: id, anchored: !!effectiveAnchor, fromQa: !!sourceQuestionId }, "feedback added");
     return id;
   }
 
@@ -289,7 +350,7 @@ export class Broker {
     const now = Date.now();
     const batch: PendingFeedback[] = this.store
       .listFeedbackByStatus(s.abspath, "queued")
-      .map((f) => ({ id: f.id, anchor: f.anchor, text: f.text }));
+      .map((f) => this.toPending(f));
     if (reviewNote && reviewNote.trim()) {
       this.store.setReviewNote(s.abspath, reviewNote, now);
       this.store.insertFeedback({

@@ -52,8 +52,8 @@ export function createServer(broker: Broker): Hono {
   });
 
   app.post("/sessions/:sid/questions", async (c) => {
-    const { anchor, text } = CreateQuestionRequest.parse(await c.req.json());
-    const id = broker.createQuestion(c.req.param("sid"), anchor ?? null, text);
+    const { anchor, text, parentId } = CreateQuestionRequest.parse(await c.req.json());
+    const id = broker.createQuestion(c.req.param("sid"), anchor ?? null, text, parentId ?? null);
     return c.json({ id });
   });
 
@@ -63,8 +63,8 @@ export function createServer(broker: Broker): Hono {
   });
 
   app.post("/sessions/:sid/feedback", async (c) => {
-    const { anchor, text } = CreateFeedbackRequest.parse(await c.req.json());
-    const id = broker.createFeedback(c.req.param("sid"), anchor ?? null, text);
+    const { anchor, text, sourceQuestionId } = CreateFeedbackRequest.parse(await c.req.json());
+    const id = broker.createFeedback(c.req.param("sid"), anchor ?? null, text, sourceQuestionId ?? null);
     return c.json({ id });
   });
 

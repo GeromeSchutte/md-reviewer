@@ -2,8 +2,29 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Popover } from "radix-ui";
-import { CircleStop, MessageSquareText, PanelRightClose, PanelRightOpen, PenLine, Plus } from "lucide-react";
-import type { Anchor, FeedbackRecord, LifecycleState, QuestionRecord, ReworkResult } from "@plan-review/shared";
+import {
+  Check,
+  CircleDashed,
+  CircleStop,
+  CornerUpLeft,
+  Hourglass,
+  type LucideIcon,
+  MessageSquareText,
+  PanelRightClose,
+  PanelRightOpen,
+  PenLine,
+  Plus,
+  Reply,
+  X,
+} from "lucide-react";
+import type {
+  Anchor,
+  FeedbackRecord,
+  FeedbackStatus,
+  LifecycleState,
+  QuestionRecord,
+  ReworkResult,
+} from "@plan-review/shared";
 import { MarkdownView } from "./components/MarkdownView";
 import { Toc } from "./components/Toc";
 import { ComposerBody, type ComposerMode } from "./components/Composer";
@@ -424,7 +445,13 @@ export default function App() {
               </div>
               <TabsContent value="review" className="flex min-h-0 flex-col">
                 <div className="min-h-0 flex-1 overflow-auto p-3">
-                  <ReviewList sid={sid} feedback={feedback} onHover={setActiveAnchor} />
+                  <ReviewList
+                    sid={sid}
+                    feedback={feedback}
+                    questions={questions}
+                    onHover={setActiveAnchor}
+                    onJumpToQuestion={jumpToQuestion}
+                  />
                 </div>
                 <ReviewBar
                   sid={sid}
@@ -435,10 +462,8 @@ export default function App() {
                   count={queuedFeedback.length}
                 />
               </TabsContent>
-              <TabsContent value="qa" className="min-h-0">
-                <div className="h-full overflow-auto p-3">
-                  <QAList sid={sid} questions={questions} onHover={setActiveAnchor} />
-                </div>
+              <TabsContent value="qa" className="flex min-h-0 flex-col">
+                <QAPanel sid={sid} questions={questions} onHover={setActiveAnchor} onSubmit={submitFromQA} />
               </TabsContent>
             </Tabs>
           </aside>
@@ -556,70 +581,273 @@ function ReviewBar({
   );
 }
 
-function QAList({
+/** Marker-tinted citation linking an item back to the Q&A question it came from —
+ *  shared by follow-up question cards and review-from-Q&A cards. Click to jump. */
+function SourceCitation({ text, title, onJump }: { text: string; title?: string; onJump: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onJump}
+      className="mb-2 flex max-w-full items-center gap-1 rounded-md border border-marker/30 bg-marker/10 px-1.5 py-0.5 text-marker transition-colors hover:bg-marker/20"
+      title={title ?? "Scroll the source question into view"}
+    >
+      <CornerUpLeft className="size-3 shrink-0" />
+      <span className="min-w-0 truncate text-xs italic text-foreground/70">{text}</span>
+    </button>
+  );
+}
+
+function QAPanel({
   sid,
   questions,
   onHover,
+  onSubmit,
 }: {
   sid: string;
   questions: QuestionRecord[];
   onHover: (anchor: Anchor | null) => void;
+  onSubmit: (source: QuestionRecord | null, text: string, mode: ComposerMode) => void;
 }) {
-  if (questions.length === 0)
-    return (
-      <Empty icon={MessageSquareText} title="No questions yet">
-        Select lines in the document, or use “New note”, to ask the agent.
-      </Empty>
-    );
+  const [sourceId, setSourceId] = useState<string | null>(null);
+  const [flashId, setFlashId] = useState<string | null>(null);
+  const source = useMemo(() => questions.find((q) => q.id === sourceId) ?? null, [questions, sourceId]);
+  const byId = useMemo(() => new Map(questions.map((q) => [q.id, q] as const)), [questions]);
+
+  // Scroll a question card into view and briefly flash it — used by the composer's
+  // source chip and by a follow-up card's "re:" back-reference. Flat, not nested:
+  // a follow-up stays its own card and just links back to its source.
+  const jumpTo = (id: string | null) => {
+    if (!id) return;
+    document.getElementById(`qa-card-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    setFlashId(id);
+    window.setTimeout(() => setFlashId((cur) => (cur === id ? null : cur)), 1200);
+  };
+
   return (
-    <ul className="space-y-2.5">
-      {[...questions].reverse().map((q) => (
-        <li
-          key={q.id}
-          onMouseEnter={() => onHover(q.anchor)}
-          onMouseLeave={() => onHover(null)}
-          onFocus={() => onHover(q.anchor)}
-          onBlur={() => onHover(null)}
-          className={cn(
-            "rounded-lg border border-border bg-card p-3 text-sm shadow-xs transition-colors",
-            q.anchor && "hover:border-marker/40",
-          )}
-        >
-          <div className="mb-2 flex items-center gap-2">
-            <QStatus status={q.status} />
-            <div className="ml-auto flex items-center gap-1.5">
-              {q.status === "error" && (
-                <Button variant="ghost" size="xs" onClick={() => retryQuestion(sid, q.id)}>
-                  Retry
-                </Button>
-              )}
-              <AnchorTag anchor={q.anchor} />
-            </div>
-          </div>
-          <p className="font-medium text-foreground">{q.text}</p>
-          {q.answerMarkdown && (
-            <div className="md-body md-body--compact mt-2.5 border-t border-border pt-2.5 text-foreground/80">
-              <Markdown remarkPlugins={[remarkGfm]}>{q.answerMarkdown}</Markdown>
-            </div>
-          )}
-          {q.status === "error" && q.errorMessage && (
-            <div className="mt-2 rounded-md bg-destructive/10 px-2 py-1.5 text-xs text-destructive">{q.errorMessage}</div>
-          )}
-        </li>
-      ))}
-    </ul>
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="min-h-0 flex-1 overflow-auto p-3">
+        {questions.length === 0 ? (
+          <Empty icon={MessageSquareText} title="No questions yet">
+            Select lines in the document, ask below, or use “New note”.
+          </Empty>
+        ) : (
+          <ul className="space-y-2.5">
+            {[...questions].reverse().map((q) => (
+              <QACard
+                key={q.id}
+                sid={sid}
+                q={q}
+                parent={q.parentId ? byId.get(q.parentId) ?? null : null}
+                isSource={q.id === sourceId}
+                isFlash={q.id === flashId}
+                onHover={onHover}
+                onReply={() => setSourceId(q.id)}
+                onJumpToParent={() => jumpTo(q.parentId ?? null)}
+              />
+            ))}
+          </ul>
+        )}
+      </div>
+      <QAComposer
+        source={source}
+        onClearSource={() => setSourceId(null)}
+        onScrollToSource={() => jumpTo(sourceId)}
+        onSubmit={(text, mode) => {
+          onSubmit(source, text, mode);
+          setSourceId(null);
+        }}
+      />
+    </div>
+  );
+}
+
+function QACard({
+  sid,
+  q,
+  parent,
+  isSource,
+  isFlash,
+  onHover,
+  onReply,
+  onJumpToParent,
+}: {
+  sid: string;
+  q: QuestionRecord;
+  parent: QuestionRecord | null;
+  isSource: boolean;
+  isFlash: boolean;
+  onHover: (anchor: Anchor | null) => void;
+  onReply: () => void;
+  onJumpToParent: () => void;
+}) {
+  // Click anywhere on a card to attach it as the composer's source — but not when the
+  // click lands on a nested control (re:/retry/reply, answer links) or is a text drag.
+  const attachOnClick = (e: { target: EventTarget | null }) => {
+    if ((e.target as HTMLElement)?.closest("a,button")) return;
+    if (window.getSelection()?.toString()) return;
+    onReply();
+  };
+  return (
+    <li
+      id={`qa-card-${q.id}`}
+      onMouseEnter={() => onHover(q.anchor)}
+      onMouseLeave={() => onHover(null)}
+      onClick={attachOnClick}
+      className={cn(
+        "scroll-mt-3 cursor-pointer rounded-lg border border-border bg-card p-3 text-sm shadow-xs transition-colors hover:border-marker/40",
+        isSource && "border-marker/50",
+        isFlash && "ring-2 ring-marker/60",
+      )}
+    >
+      {/* Source question (follow-ups only) — a marker-tinted, italic citation above the
+          title, distinct from the card's own question. Click to scroll the source into view. */}
+      {q.parentId && (
+        <SourceCitation
+          text={parent?.text ?? "source question"}
+          title="Follows up on an earlier question — click to scroll it into view"
+          onJump={onJumpToParent}
+        />
+      )}
+      <div className="flex items-start gap-2">
+        <p className="flex-1 font-medium text-foreground">{q.text}</p>
+        <QStatus status={q.status} />
+      </div>
+      {q.answerMarkdown ? (
+        <div className="md-body md-body--compact mt-2.5 border-t border-border pt-2.5 text-foreground/80">
+          <Markdown remarkPlugins={[remarkGfm]}>{q.answerMarkdown}</Markdown>
+        </div>
+      ) : q.status === "in-progress" ? (
+        // Answer pending — a "typing" bubble where the answer will land, tinted like the
+        // answering glyph (same bg-info/15 + info color) so both read as one signal.
+        <div className="mt-2.5">
+          <span className="inline-flex items-center rounded-md bg-info/15 px-2.5 py-1.5 text-info">
+            <TypingDots />
+          </span>
+        </div>
+      ) : null}
+      {q.status === "error" && (
+        <div className="mt-2 flex items-start gap-2 rounded-md bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
+          <span className="flex-1">{q.errorMessage ?? "Couldn’t answer this question."}</span>
+          <Button
+            variant="ghost"
+            size="xs"
+            className="shrink-0 text-destructive"
+            onClick={() => retryQuestion(sid, q.id)}
+          >
+            Retry
+          </Button>
+        </div>
+      )}
+    </li>
+  );
+}
+
+const QA_MODES: { value: ComposerMode; label: string }[] = [
+  { value: "ask", label: "Question" },
+  { value: "feedback", label: "Review" },
+];
+
+/** The standing Q&A composer: a Question/Review toggle, a textarea, and an optional
+ *  source-question indicator (scroll-into-view + detach) when replying to one. */
+function QAComposer({
+  source,
+  onClearSource,
+  onScrollToSource,
+  onSubmit,
+}: {
+  source: QuestionRecord | null;
+  onClearSource: () => void;
+  onScrollToSource: () => void;
+  onSubmit: (text: string, mode: ComposerMode) => void;
+}) {
+  const [mode, setMode] = useState<ComposerMode>("ask");
+  const [text, setText] = useState("");
+  const submit = () => {
+    const t = text.trim();
+    if (!t) return;
+    onSubmit(t, mode);
+    setText("");
+  };
+  const placeholder =
+    mode === "ask"
+      ? source
+        ? "Ask a follow-up to this question…"
+        : "Ask the agent a question…"
+      : source
+        ? "Add a review item from this answer…"
+        : "Leave a review comment…";
+
+  return (
+    <div className="border-t border-border bg-card/50 p-3">
+      {source && (
+        <div className="mb-2 flex items-center gap-1.5 rounded-md border border-marker/30 bg-marker/10 px-2 py-1.5">
+          <Reply className="size-3.5 shrink-0 text-marker" />
+          <button
+            type="button"
+            onClick={onScrollToSource}
+            className="min-w-0 flex-1 truncate text-left text-xs text-foreground/80 hover:text-foreground"
+            title="Scroll the source question into view"
+          >
+            <span className="font-mono text-[0.6rem] tracking-wide text-marker uppercase">re:</span> {source.text}
+          </button>
+          <button
+            type="button"
+            onClick={onClearSource}
+            className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
+            aria-label="Detach source question"
+            title="Detach source question"
+          >
+            <X className="size-3.5" />
+          </button>
+        </div>
+      )}
+      <div className="mb-2 inline-flex rounded-md border border-border p-0.5">
+        {QA_MODES.map((m) => (
+          <button
+            key={m.value}
+            type="button"
+            onClick={() => setMode(m.value)}
+            className={cn(
+              "rounded px-2 py-0.5 text-xs font-medium transition-colors",
+              mode === m.value
+                ? "bg-secondary text-secondary-foreground"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {m.label}
+          </button>
+        ))}
+      </div>
+      <Textarea
+        className="mb-2 h-20 resize-none text-sm"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if ((e.metaKey || e.ctrlKey) && e.key === "Enter") submit();
+        }}
+        placeholder={placeholder}
+      />
+      <Button size="sm" disabled={!text.trim()} onClick={submit}>
+        {mode === "ask" ? (source ? "Ask follow-up" : "Ask") : "Add review item"}
+      </Button>
+    </div>
   );
 }
 
 function ReviewList({
   sid,
   feedback,
+  questions,
   onHover,
+  onJumpToQuestion,
 }: {
   sid: string;
   feedback: FeedbackRecord[];
+  questions: QuestionRecord[];
   onHover: (anchor: Anchor | null) => void;
+  onJumpToQuestion: (id: string) => void;
 }) {
+  const byId = useMemo(() => new Map(questions.map((q) => [q.id, q] as const)), [questions]);
   const active = feedback.filter((f) => f.status === "queued" || f.status === "submitted");
   const resolved = feedback.filter((f) => f.status === "reworked");
   if (active.length === 0 && resolved.length === 0)
@@ -641,35 +869,35 @@ function ReviewList({
                 onMouseLeave={() => onHover(null)}
                 onFocus={() => onHover(f.anchor)}
                 onBlur={() => onHover(null)}
-                className={cn(
-                  "rounded-lg border border-border bg-card p-3 text-sm shadow-xs transition-colors",
-                  queued && "border-l-2 border-l-marker",
-                  f.anchor && "hover:border-marker/40",
-                )}
+                className="rounded-lg border border-border bg-card p-3 text-sm shadow-xs transition-colors hover:border-marker/40"
               >
-                <div className="mb-2 flex items-center gap-2">
-                  <AnchorTag anchor={f.anchor} tone={queued ? "marker" : "muted"} />
-                  <span
-                    className={cn(
-                      "font-mono text-[0.6rem] font-medium tracking-[0.1em] uppercase",
-                      queued ? "text-marker" : "text-info",
-                    )}
-                  >
-                    {f.status}
-                  </span>
+                {f.sourceQuestionId && (
+                  <SourceCitation
+                    text={byId.get(f.sourceQuestionId)?.text ?? "source question"}
+                    title="From a Q&A exchange — click to scroll the question into view"
+                    onJump={() => onJumpToQuestion(f.sourceQuestionId!)}
+                  />
+                )}
+                <div className="flex items-start gap-2">
+                  <p className="flex-1 font-medium text-foreground">{f.text}</p>
+                  <FStatus status={f.status} />
+                </div>
+                <div className="mt-2 flex items-center gap-2">
+                  <AnchorTag anchor={f.anchor} />
                   {queued && (
                     <Button variant="ghost" size="xs" className="ml-auto" onClick={() => removeFeedback(sid, f.id)}>
                       Remove
                     </Button>
                   )}
                 </div>
-                <p className="text-foreground/90">{f.text}</p>
               </li>
             );
           })}
         </ul>
       )}
-      {resolved.length > 0 && <ResolvedGroup feedback={resolved} onHover={onHover} />}
+      {resolved.length > 0 && (
+        <ResolvedGroup feedback={resolved} byId={byId} onHover={onHover} onJumpToQuestion={onJumpToQuestion} />
+      )}
     </div>
   );
 }
@@ -678,10 +906,14 @@ function ReviewList({
  *  and tagged with the doc version each comment was written against. */
 function ResolvedGroup({
   feedback,
+  byId,
   onHover,
+  onJumpToQuestion,
 }: {
   feedback: FeedbackRecord[];
+  byId: Map<string, QuestionRecord>;
   onHover: (anchor: Anchor | null) => void;
+  onJumpToQuestion: (id: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -707,11 +939,19 @@ function ResolvedGroup({
               onBlur={() => onHover(null)}
               className="rounded-lg border border-border/60 bg-muted/30 p-3 text-sm opacity-80 transition-opacity hover:opacity-100"
             >
-              <div className="mb-2 flex items-center gap-2">
-                <AnchorTag anchor={f.anchor} tone="muted" />
-                <span className="font-mono text-[0.6rem] font-medium tracking-[0.1em] text-success uppercase">
-                  addressed
-                </span>
+              {f.sourceQuestionId && (
+                <SourceCitation
+                  text={byId.get(f.sourceQuestionId)?.text ?? "source question"}
+                  title="From a Q&A exchange — click to scroll the question into view"
+                  onJump={() => onJumpToQuestion(f.sourceQuestionId!)}
+                />
+              )}
+              <div className="flex items-start gap-2">
+                <p className="flex-1 font-medium text-foreground/70">{f.text}</p>
+                <FStatus status={f.status} />
+              </div>
+              <div className="mt-2 flex items-center gap-2">
+                <AnchorTag anchor={f.anchor} />
                 <span
                   className="ml-auto font-mono text-[0.6rem] tracking-tight text-muted-foreground/70"
                   title={`written against doc version ${f.docVersion}`}
@@ -719,7 +959,6 @@ function ResolvedGroup({
                   @{f.docVersion.slice(0, 7)}
                 </span>
               </div>
-              <p className="text-foreground/70">{f.text}</p>
             </li>
           ))}
         </ul>
@@ -728,23 +967,67 @@ function ResolvedGroup({
   );
 }
 
-const Q_STATUS: Record<QuestionRecord["status"], { label: string; cls: string; busy?: boolean; icon?: string }> = {
-  queued: { label: "queued", cls: "text-muted-foreground", busy: true },
-  "in-progress": { label: "answering", cls: "text-info", busy: true },
-  answered: { label: "answered", cls: "text-success", icon: "✓" },
-  error: { label: "error", cls: "text-destructive", icon: "!" },
+/** Shared status-badge language for Q&A and Review: one glyph in a fixed tinted slot,
+ *  with the state name on a hover tooltip. Color encodes the state; the shape
+ *  vocabulary (hourglass / spinner / ✓ / draft) is common across both tabs. */
+type StatusMeta = {
+  label: string;
+  cls: string;
+  busy?: boolean;
+  Icon?: LucideIcon;
+  stroke?: number;
+  iconCls?: string;
+  icon?: string;
 };
-function QStatus({ status }: { status: QuestionRecord["status"] }) {
-  const s = Q_STATUS[status];
+function StatusBadge({ meta }: { meta: StatusMeta }) {
   return (
-    <span className={cn("flex items-center gap-1.5 font-mono text-[0.62rem] font-medium tracking-[0.1em] uppercase", s.cls)}>
-      {s.busy ? <Spinner /> : s.icon} {s.label}
+    <span
+      title={meta.label}
+      className={cn(
+        "inline-flex size-5 shrink-0 items-center justify-center rounded-md font-mono text-[0.7rem] font-semibold",
+        meta.cls,
+      )}
+    >
+      {meta.busy ? (
+        <Spinner />
+      ) : meta.Icon ? (
+        <meta.Icon className={meta.iconCls ?? "size-3.5"} strokeWidth={meta.stroke ?? 3} />
+      ) : (
+        meta.icon
+      )}
     </span>
   );
 }
 
+// Question states: hourglass (queued) · spinner (answering) · ✓ (answered) · ! (error).
+const Q_STATUS: Record<QuestionRecord["status"], StatusMeta> = {
+  queued: { label: "queued", cls: "bg-muted text-muted-foreground", Icon: Hourglass, stroke: 2, iconCls: "size-3" },
+  "in-progress": { label: "answering", cls: "bg-info/15 text-info", busy: true },
+  answered: { label: "answered", cls: "bg-success/15 text-success", Icon: Check },
+  error: { label: "error", cls: "bg-destructive/15 text-destructive", icon: "!" },
+};
+const QStatus = ({ status }: { status: QuestionRecord["status"] }) => <StatusBadge meta={Q_STATUS[status]} />;
+
+// Review states, same language: marker draft (queued — your draft to submit) · info
+// spinner (submitted — agent reworking) · success ✓ (addressed). orphaned is a quiet dot.
+const F_STATUS: Record<FeedbackStatus, StatusMeta> = {
+  queued: { label: "unsubmitted", cls: "bg-muted text-muted-foreground", Icon: CircleDashed, stroke: 2, iconCls: "size-3" },
+  submitted: { label: "submitted", cls: "bg-info/15 text-info", busy: true },
+  reworked: { label: "addressed", cls: "bg-success/15 text-success", Icon: Check },
+  orphaned: { label: "orphaned", cls: "bg-muted text-muted-foreground", icon: "·" },
+};
+const FStatus = ({ status }: { status: FeedbackStatus }) => <StatusBadge meta={F_STATUS[status]} />;
+
 const Spinner = () => (
   <span className="inline-block size-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+);
+/** Animated "…" — three dots bouncing in sequence, for the "answering" state. */
+const TypingDots = () => (
+  <span className="inline-flex items-end gap-0.5">
+    <span className="size-1 animate-bounce rounded-full bg-current [animation-delay:-0.3s]" />
+    <span className="size-1 animate-bounce rounded-full bg-current [animation-delay:-0.15s]" />
+    <span className="size-1 animate-bounce rounded-full bg-current" />
+  </span>
 );
 const Empty = ({
   icon: Icon,

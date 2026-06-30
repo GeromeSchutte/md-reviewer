@@ -32,13 +32,23 @@ export async function createSession(planPath: string): Promise<{ sid: string }> 
   return (await post(routes.sessions, { planPath })) as { sid: string };
 }
 
-export async function askQuestion(sid: string, anchor: Anchor | null, text: string): Promise<string> {
-  if (isMock()) return mockAsk(anchor, text);
-  return ((await post(routes.questions(sid), { anchor, text })) as { id: string }).id;
+export async function askQuestion(
+  sid: string,
+  anchor: Anchor | null,
+  text: string,
+  parentId?: string | null,
+): Promise<string> {
+  if (isMock()) return mockAsk(anchor, text, parentId);
+  return ((await post(routes.questions(sid), { anchor, text, parentId })) as { id: string }).id;
 }
-export async function leaveFeedback(sid: string, anchor: Anchor | null, text: string): Promise<string> {
-  if (isMock()) return mockLeaveFeedback(anchor, text);
-  return ((await post(routes.feedback(sid), { anchor, text })) as { id: string }).id;
+export async function leaveFeedback(
+  sid: string,
+  anchor: Anchor | null,
+  text: string,
+  sourceQuestionId?: string | null,
+): Promise<string> {
+  if (isMock()) return mockLeaveFeedback(anchor, text, sourceQuestionId);
+  return ((await post(routes.feedback(sid), { anchor, text, sourceQuestionId })) as { id: string }).id;
 }
 export async function retryQuestion(sid: string, id: string): Promise<void> {
   if (isMock()) return mockRetry(id);

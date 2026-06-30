@@ -77,6 +77,26 @@ const seedQuestions: QuestionRecord[] = [
     answeredAt: now - 55_000,
     errorMessage: null,
     agentSource: "agent",
+    threadId: "mock-q-answered",
+    parentId: null,
+  },
+  {
+    // Follow-up on the answered question above — same thread, inherits its anchor.
+    id: "mock-q-followup",
+    abspath: "/mock/plan.md",
+    anchor: anchor(13, 15),
+    docVersion: "mock",
+    text: "Got it. So could we memoize it to avoid recomputing on every replay?",
+    createdAt: now - 50_000,
+    status: "answered",
+    answerMarkdown:
+      "Yes — purity is exactly what makes memoization safe here. Key the cache on the " +
+      "raw widget id and you can skip re-running `transform` for unchanged inputs.",
+    answeredAt: now - 48_000,
+    errorMessage: null,
+    agentSource: "agent",
+    threadId: "mock-q-answered",
+    parentId: "mock-q-answered",
   },
   {
     id: "mock-q-progress",
@@ -140,6 +160,19 @@ const seedFeedback: FeedbackRecord[] = [
     kind: "comment",
     status: "submitted",
   },
+  {
+    // A review item created from a Q&A exchange — carries the source question link
+    // and inherits its anchor. Exercises the "re:" citation on the Review tab.
+    id: "mock-f-fromqa",
+    abspath: "/mock/plan.md",
+    anchor: anchor(13, 15),
+    docVersion: "mock",
+    text: "Per the Q&A, let's add a memoization note to the transform step.",
+    createdAt: now - 12_000,
+    kind: "comment",
+    status: "queued",
+    sourceQuestionId: "mock-q-answered",
+  },
 ];
 
 const store = {
@@ -172,14 +205,18 @@ export function mockSubscribe(onEvent: Listener): () => void {
   return () => listeners.delete(onEvent);
 }
 
-export function mockAsk(anchor: Anchor | null, text: string): string {
+export function mockAsk(anchor: Anchor | null, text: string, parentId?: string | null): string {
   const id = `mock-q-live-${seq++}`;
+  // A follow-up inherits its parent's thread + anchor (the broker does this for real);
+  // a root question starts a new thread keyed on its own id.
+  const parent = parentId ? store.questions.find((q) => q.id === parentId) : undefined;
+  const threadId = parent ? parent.threadId ?? parent.id : id;
   store.questions = [
     ...store.questions,
     {
       id,
       abspath: "/mock/plan.md",
-      anchor,
+      anchor: parent ? parent.anchor : anchor,
       docVersion: "mock",
       text,
       createdAt: Date.now(),
@@ -188,6 +225,8 @@ export function mockAsk(anchor: Anchor | null, text: string): string {
       answeredAt: null,
       errorMessage: null,
       agentSource: "agent",
+      threadId,
+      parentId: parentId ?? null,
     },
   ];
   // Simulate the agent picking it up and answering.
@@ -205,7 +244,7 @@ export function mockAsk(anchor: Anchor | null, text: string): string {
   return id;
 }
 
-export function mockLeaveFeedback(anchor: Anchor | null, text: string): string {
+export function mockLeaveFeedback(anchor: Anchor | null, text: string, sourceQuestionId?: string | null): string {
   const id = `mock-f-live-${seq++}`;
   const record: FeedbackRecord = {
     id,
@@ -216,6 +255,7 @@ export function mockLeaveFeedback(anchor: Anchor | null, text: string): string {
     createdAt: Date.now(),
     kind: "comment",
     status: "queued",
+    sourceQuestionId: sourceQuestionId ?? null,
   };
   store.feedback = [...store.feedback, record];
   emit({ type: "feedback-ack", feedback: record });

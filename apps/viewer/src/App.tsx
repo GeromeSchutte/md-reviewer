@@ -177,8 +177,108 @@ export default function App() {
     [sid],
   );
 
+  // Submit from the Q&A composer, optionally anchored to a source question:
+  //  - "ask"  → a follow-up question (parentId = source.id, inheriting its anchor),
+  //             or a plain general question when there's no source.
+  //  - "feedback" → a review item linked to the source question (sourceQuestionId),
+  //             inheriting its anchor; lands in the Review batch like any feedback.
+  const submitFromQA = useCallback(
+    async (source: QuestionRecord | null, text: string, mode: ComposerMode) => {
+      if (!sid) return;
+      if (mode === "ask") {
+        const parentId = source?.id ?? null;
+        const anchor = source?.anchor ?? null;
+        const id = await askQuestion(sid, anchor, text, parentId);
+        const threadId = source ? source.threadId ?? source.id : id;
+        setQuestions((qs) => {
+          const optimistic: QuestionRecord = {
+            id,
+            abspath: "",
+            anchor,
+            docVersion: "",
+            text,
+            createdAt: Date.now(),
+            status: "queued",
+            answerMarkdown: null,
+            answeredAt: null,
+            errorMessage: null,
+            agentSource: null,
+            threadId,
+            parentId,
+          };
+          // Same skeleton-merge as submitAnnotation: an SSE frame for this id may
+          // beat the POST's resolution, so merge (existing fields win) by id.
+          const i = qs.findIndex((q) => q.id === id);
+          if (i === -1) return [...qs, optimistic];
+          const next = [...qs];
+          next[i] = { ...optimistic, ...next[i]! };
+          return next;
+        });
+        setTab("qa");
+      } else {
+        await leaveFeedback(sid, source?.anchor ?? null, text, source?.id ?? null);
+        setTab("review");
+      }
+    },
+    [sid],
+  );
+
+  // Jump from a review item's "re:" citation to its source question: switch to the
+  // Q&A tab, then (once it mounts) scroll the question card into view.
+  const jumpToQuestion = useCallback((id: string) => {
+    setTab("qa");
+    window.setTimeout(() => {
+      document.getElementById(`qa-card-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 80);
+  }, []);
+
+  // End the session and close this plan's window (best-effort). Extracted so both
+  // the plain "End session" and the "End without submitting" path reuse it.
+  const endAndClose = useCallback(async () => {
+    if (!sid) return;
+    setEndOpen(false);
+    try {
+      // Await the end signal before tearing the webview down — closing the
+      // window would otherwise cancel the in-flight request.
+      await endSession(sid);
+    } catch {
+      /* best-effort; close this plan's window regardless */
+    }
+    if (isMock()) return;
+    try {
+      const { getCurrentWindow } = await import("@tauri-apps/api/window");
+      await getCurrentWindow().close();
+    } catch {
+      /* not running inside Tauri (browser/dev) */
+    }
+  }, [sid]);
+
+  // "Submit & end" from the End dialog: action the queued batch, then end and close.
+  // The agent's wait-loop processes the finalize event before the end event, so the
+  // rework still lands after the window is gone — no reason to keep the session open.
+  const submitAndEnd = useCallback(async () => {
+    if (!sid) return;
+    try {
+      await submitReview(sid, reviewNote.trim() || null);
+      setReviewNote("");
+    } catch {
+      /* best-effort; end regardless */
+    }
+    await endAndClose();
+  }, [sid, reviewNote, endAndClose]);
+
   const meta = STATE_META[state];
   const queuedFeedback = useMemo(() => feedback.filter((f) => f.status === "queued"), [feedback]);
+  // Un-submitted review = queued comments and/or a typed-but-unsent overall note.
+  // `end` doesn't rework, so we warn before discarding it from this session.
+  const hasNote = reviewNote.trim().length > 0;
+  const unsubmittedSummary = [
+    queuedFeedback.length > 0 ? `${queuedFeedback.length} ${queuedFeedback.length === 1 ? "comment" : "comments"}` : null,
+    hasNote ? "an overall note" : null,
+  ]
+    .filter(Boolean)
+    .join(" + ");
+  const hasUnsubmitted = unsubmittedSummary.length > 0;
   const toc = useMemo(() => parseToc(markdown), [markdown]);
   const activeId = useScrollSpy(mainEl, useMemo(() => toc.map((t) => t.id), [toc]));
 
@@ -234,40 +334,45 @@ export default function App() {
               <Popover.Content
                 align="end"
                 sideOffset={8}
-                className="z-50 w-72 rounded-lg border border-border bg-popover p-3.5 text-popover-foreground shadow-xl outline-none"
+                className="z-50 w-80 rounded-lg border border-border bg-popover p-3.5 text-popover-foreground shadow-xl outline-none"
               >
-                <p className="text-sm font-medium">End this review session?</p>
-                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                  The agent finalizes the plan and the session closes. You can’t add notes afterward.
-                </p>
-                <div className="mt-3 flex justify-end gap-2">
-                  <Button variant="ghost" size="sm" onClick={() => setEndOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={async () => {
-                      setEndOpen(false);
-                      // Await the end signal before tearing the webview down — closing the
-                      // window would otherwise cancel the in-flight request.
-                      try {
-                        await endSession(sid);
-                      } catch {
-                        /* best-effort; close this plan's window regardless */
-                      }
-                      if (isMock()) return;
-                      try {
-                        const { getCurrentWindow } = await import("@tauri-apps/api/window");
-                        await getCurrentWindow().close();
-                      } catch {
-                        /* not running inside Tauri (browser/dev) */
-                      }
-                    }}
-                  >
-                    End session
-                  </Button>
-                </div>
+                {hasUnsubmitted ? (
+                  <>
+                    <p className="text-sm font-medium">Submit your review before ending?</p>
+                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                      You have un-submitted review ({unsubmittedSummary}). Submit &amp; end and the agent reworks the
+                      plan after this window closes — or end without applying it (it’s kept for later).
+                    </p>
+                    <div className="mt-3 flex flex-col gap-2">
+                      <Button size="sm" onClick={submitAndEnd}>
+                        Submit &amp; end{queuedFeedback.length > 0 ? ` · ${queuedFeedback.length}` : ""}
+                      </Button>
+                      <div className="flex justify-end gap-2">
+                        <Button variant="ghost" size="sm" onClick={() => setEndOpen(false)}>
+                          Cancel
+                        </Button>
+                        <Button variant="destructive" size="sm" onClick={endAndClose}>
+                          End without submitting
+                        </Button>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm font-medium">End this review session?</p>
+                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                      The agent stops and this plan’s window closes.
+                    </p>
+                    <div className="mt-3 flex justify-end gap-2">
+                      <Button variant="ghost" size="sm" onClick={() => setEndOpen(false)}>
+                        Cancel
+                      </Button>
+                      <Button variant="destructive" size="sm" onClick={endAndClose}>
+                        End session
+                      </Button>
+                    </div>
+                  </>
+                )}
               </Popover.Content>
             </Popover.Portal>
           </Popover.Root>

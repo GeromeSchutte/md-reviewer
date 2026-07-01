@@ -26,6 +26,25 @@ rename `[Unreleased]` to the new version + date and start a fresh `[Unreleased]`
 - **`plan-review update`** — CLI command to check for updates (`--apply` to apply).
 - `GET /update/check` and `POST /update/apply` broker endpoints; `GET /health` now
   also reports the checked-out commit `sha`.
+- **`plan-review wait-until <sid>`** — a CLI command that blocks until there is
+  actually review work and only then returns a batch (it never returns an empty
+  hold). Run it in the background so the agent's turn ends and the harness
+  re-invokes it when work arrives — no poll loop in the conversation.
+
+### Changed
+
+- **Push-based agent notification (no more poll loop).** Reviews take a long time,
+  so the agent no longer sits in a foreground `wait` loop that eventually gives up.
+  - *User-opened files:* the broker now runs the spawned worker as a persistent
+    **streaming-input** session and **pushes** work into it when a question or the
+    Submit arrives; the worker sits idle (zero tokens) between events instead of
+    re-polling every ~4 minutes.
+  - *Agent-written plans:* the agent runs `wait-until` in the background and ends
+    its turn, so the interactive session is freed and its live context is preserved
+    for answering questions (it is never replaced by a spawned worker).
+  - Feedback comments still batch until Submit — they never wake the agent.
+- The viewer now shows **"Agent offline"** when an attached interactive agent stops
+  polling past a grace window; re-attaching (asking a question / submitting) clears it.
 
 ## [0.1.0] - 2026-06-30
 

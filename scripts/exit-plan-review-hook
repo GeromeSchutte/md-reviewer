@@ -1,0 +1,157 @@
+#!/usr/bin/env bun
+/**
+ * PreToolUse hook for the `ExitPlanMode` tool.
+ *
+ * Goal: when an agent finishes planning and tries to present its plan inline via
+ * ExitPlanMode, redirect it into the Plan Review viewer instead — so the plan is
+ * reviewed interactively (questions + anchored feedback + rework) rather than dumped
+ * into the terminal. This is the "viewer replaces the inline plan" behaviour.
+ *
+ * How it works (a re-entrant gate):
+ *   1st ExitPlanMode for a given (session, plan file): open the plan in the viewer,
+ *   record a marker, and DENY the call with a message telling the agent to attach and
+ *   run the review loop. The agent stays in plan mode — where editing the plan file
+ *   (the rework step) and running the plan-review CLI are both permitted — and reviews.
+ *   2nd ExitPlanMode (after the review's `end` event): the marker exists, so we ALLOW
+ *   it. ExitPlanMode then does its normal job — the exit gate that unlocks implementation.
+ *
+ * Failure philosophy: NEVER brick plan mode. Any error (no plan file found, broker
+ * down, malformed input) fails OPEN — we allow ExitPlanMode and let the normal inline
+ * flow happen. A hook that traps the user in plan mode is worse than a missed viewer.
+ *
+ * Marker key is sha1(session_id + plan path): re-triggers per Claude session, stays
+ * stable across reworks within a session, and survives a broker/daemon restart (unlike
+ * the broker's in-memory session map).
+ */
+import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+/** Allow ExitPlanMode to proceed as normal (no output = default-proceed). */
+function allow(): never {
+  process.exit(0);
+}
+
+/** Block ExitPlanMode and feed `reason` back to the agent. */
+function deny(reason: string): never {
+  process.stdout.write(
+    JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "deny",
+        permissionDecisionReason: reason,
+      },
+    }),
+  );
+  process.exit(0);
+}
+
+/** Claude Code's config dir — where plan-mode plan files live (honours CLAUDE_CONFIG_DIR). */
+function plansDir(): string {
+  return join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"), "plans");
+}
+
+function dataDir(): string {
+  return process.env.PLAN_REVIEW_DATA_DIR ?? join(homedir(), ".plan-review");
+}
+
+/**
+ * The plan being exited is, essentially always, the most recently modified file in the
+ * plans dir — the agent writes/edits it in the turns right before calling ExitPlanMode.
+ * This is fast (one dir stat) and needs no transcript parsing. The only miss is two
+ * concurrent plan-mode sessions in separate terminals, which is rare and self-consistent
+ * (we open whatever we pick and tell the agent to attach to that same file).
+ */
+function newestPlanFile(): string | undefined {
+  const dir = plansDir();
+  if (!existsSync(dir)) return undefined;
+  let newest: { path: string; mtime: number } | undefined;
+  for (const entry of readdirSync(dir)) {
+    if (!entry.endsWith(".md")) continue;
+    const p = join(dir, entry);
+    try {
+      const st = statSync(p);
+      if (!st.isFile()) continue;
+      if (!newest || st.mtimeMs > newest.mtime) newest = { path: p, mtime: st.mtimeMs };
+    } catch {
+      /* skip unreadable entries */
+    }
+  }
+  return newest?.path;
+}
+
+/** The sibling `plan-review` CLI wrapper, resolved through this script's real location. */
+function planReviewCli(): string {
+  if (process.env.PLAN_REVIEW_CLI) return process.env.PLAN_REVIEW_CLI; // override (tests / non-standard layouts)
+  try {
+    const self = realpathSync(fileURLToPath(import.meta.url));
+    const sibling = join(dirname(self), "plan-review");
+    if (existsSync(sibling)) return sibling;
+  } catch {
+    /* fall through */
+  }
+  return join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"), "scripts", "plan-review");
+}
+
+function main(): void {
+  // Read the hook payload. Anything unexpected → fail open.
+  let payload: { session_id?: string; transcript_path?: string } = {};
+  try {
+    payload = JSON.parse(readFileSync(0, "utf8") || "{}");
+  } catch {
+    allow();
+  }
+  const sessionId = payload.session_id ?? "";
+
+  const planPath = newestPlanFile();
+  if (!planPath) allow(); // no plan file to review — don't get in the way
+
+  const marker = join(dataDir(), "exitplan-hook", createHash("sha1").update(`${sessionId}\0${planPath}`).digest("hex"));
+
+  // Second time around (review already done for this plan+session) → let ExitPlanMode run.
+  if (existsSync(marker)) allow();
+
+  // First time: open the plan in the viewer. The hook runs as the harness (not the
+  // plan-mode-restricted agent), so launching the GUI here is reliable regardless of
+  // what agent tool calls plan mode permits.
+  let sid = "";
+  try {
+    const res = spawnSync(planReviewCli(), ["open", planPath!, "--json"], { encoding: "utf8", timeout: 30_000 });
+    if (res.status !== 0) allow(); // broker/viewer couldn't come up — don't block the user
+    // `open --json` prints `{"sid":"...","abspath":"..."}` on its last stdout line.
+    const line = (res.stdout ?? "").trim().split("\n").filter(Boolean).pop() ?? "";
+    sid = (JSON.parse(line) as { sid?: string }).sid ?? "";
+    if (!sid) allow();
+  } catch {
+    allow();
+  }
+
+  // Record the marker only after a successful open, so a failed open can retry next time.
+  try {
+    mkdirSync(dirname(marker), { recursive: true });
+    writeFileSync(marker, JSON.stringify({ sid, planPath, sessionId, at: Date.now() }));
+  } catch {
+    /* non-fatal: worst case the agent gets redirected again, which is harmless */
+  }
+
+  const cli = "~/.claude/scripts/plan-review";
+  deny(
+    [
+      `Your plan has been opened in the Plan Review viewer (session ${sid}) for interactive review.`,
+      `Do NOT present the plan inline — review it in the viewer instead, following the plan-review skill.`,
+      ``,
+      `1. Attach as the review agent (use this exact path):`,
+      `   ${cli} attach ${sid} --path ${planPath} --source agent`,
+      `2. Run the wait-loop: ${cli} wait ${sid} — answer questions and, on \`finalize\`, rework`,
+      `   the plan file (${planPath}). Editing that file is permitted while in plan mode, and the`,
+      `   viewer live-updates from it. Keep re-polling until you receive an \`end\` event.`,
+      `3. Only after the \`end\` event, call ExitPlanMode again — this gate will then allow it so`,
+      `   you can begin implementing.`,
+    ].join("\n"),
+  );
+}
+
+main();

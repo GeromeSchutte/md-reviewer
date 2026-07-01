@@ -22,7 +22,9 @@ function main(): void {
     sha: SHA,
     log,
     onSessionOpened: (abspath) => watcher.watch(abspath),
-    spawnAgent: (info) => spawner(info),
+    spawnAgent: (info) => spawner.spawn(info),
+    notifyWorker: (sid) => spawner.notify(sid),
+    stopWorker: (sid) => spawner.stop(sid),
   });
   const watcher = new FileWatcher((abspath, content) => broker.updateDoc(abspath, content));
   const spawner = makeSpawner({ store: broker.store, baseUrl: brokerBaseUrl(DEFAULT_PORT), log });

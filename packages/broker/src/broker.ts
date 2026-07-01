@@ -38,6 +38,8 @@ interface Session {
   waiters: Set<Waiter>;
   sseClients: Set<SSEClient>;
   disconnectTimer: ReturnType<typeof setTimeout> | null;
+  /** Fires after an attached agent stops polling; marks it offline in the viewer. */
+  agentGuardTimer: ReturnType<typeof setTimeout> | null;
 }
 
 export interface BrokerOptions {
@@ -46,12 +48,19 @@ export interface BrokerOptions {
   holdMs?: number;
   /** Grace period after the last viewer disconnects before the agent is sent `end`. */
   disconnectGraceMs?: number;
+  /** Grace after an attached agent stops polling before the viewer shows it offline. */
+  agentGraceMs?: number;
   version?: string;
   /** The checked-out commit the daemon is running from; surfaced on /health so the
    *  viewer can detect when an applied update has landed. */
   sha?: string;
   /** Spawn a headless agent for a session that has no agent attached (user-opened path). */
   spawnAgent?: (info: { sid: string; abspath: string; title: string }) => void;
+  /** Push a "new work" nudge to a live spawned worker so it fetches the batch (user-opened path).
+   *  No-ops for agent-initiated sessions (no worker is registered), so it never replaces a live agent. */
+  notifyWorker?: (sid: string) => void;
+  /** Tear a spawned worker down when its session ends. */
+  stopWorker?: (sid: string) => void;
   /** Start watching a plan file for live updates when its session first opens. */
   onSessionOpened?: (abspath: string) => void;
   /** Structured logger; defaults to silent so tests/embeddings don't write to disk. */
@@ -64,9 +73,12 @@ export class Broker {
   readonly store: Store;
   private readonly holdMs: number;
   private readonly disconnectGraceMs: number;
+  private readonly agentGraceMs: number;
   private readonly version: string;
   private readonly sha: string;
   private readonly spawnAgent?: BrokerOptions["spawnAgent"];
+  private readonly notifyWorker?: BrokerOptions["notifyWorker"];
+  private readonly stopWorker?: BrokerOptions["stopWorker"];
   private readonly onSessionOpened?: BrokerOptions["onSessionOpened"];
   private readonly log: Logger;
   private readonly sessions = new Map<string, Session>();
@@ -76,9 +88,12 @@ export class Broker {
     this.store = opts.store ?? new Store();
     this.holdMs = opts.holdMs ?? 240_000;
     this.disconnectGraceMs = opts.disconnectGraceMs ?? 120_000;
+    this.agentGraceMs = opts.agentGraceMs ?? 30_000;
     this.version = opts.version ?? "0.0.0";
     this.sha = opts.sha ?? "";
     this.spawnAgent = opts.spawnAgent;
+    this.notifyWorker = opts.notifyWorker;
+    this.stopWorker = opts.stopWorker;
     this.onSessionOpened = opts.onSessionOpened;
     this.log = opts.log ?? silentLogger;
   }
@@ -123,14 +138,17 @@ export class Broker {
       waiters: new Set(),
       sseClients: new Set(),
       disconnectTimer: null,
+      agentGuardTimer: null,
     };
     this.sessions.set(session.sid, session);
     this.byPath.set(abspath, session.sid);
 
     this.log.info({ event: "session.open", sid: session.sid, abspath, expectAgent: !!opts.expectAgent }, "session opened");
     this.onSessionOpened?.(abspath);
-    // User-initiated path only: bring up a headless agent. When expectAgent is set,
-    // the caller will attach as the agent, so spawning one would be a duplicate.
+    // User-initiated path only: bring up a headless worker the broker can push to.
+    // When expectAgent is set, the caller is the interactive agent that wrote the plan
+    // and will attach itself — it owns live context we must never replace with a spawned
+    // worker, so no worker is ever created (nor pushed to) for agent-initiated sessions.
     if (!opts.expectAgent) this.spawnAgent?.({ sid: session.sid, abspath, title });
 
     return { sid: session.sid, state: session.state };
@@ -141,6 +159,8 @@ export class Broker {
     const s = this.require(sid);
     s.agentSource = source;
     s.agentLastSeen = Date.now();
+    this.disarmAgentGuard(s); // an agent is present again
+
     // Orphan recovery: any question delivered to a now-dead agent goes back to queued.
     const requeued = this.store.requeueInProgress(s.abspath);
     for (const id of requeued) this.broadcast(s, { type: "qa-status", id, status: "queued" });
@@ -156,6 +176,7 @@ export class Broker {
   wait(sid: string, signal?: AbortSignal): Promise<ReviewEvent[]> {
     const s = this.require(sid);
     s.agentLastSeen = Date.now();
+    this.disarmAgentGuard(s); // the agent is actively polling
     const immediate = this.collectBatch(s);
     if (immediate.length) return Promise.resolve(immediate);
 
@@ -164,6 +185,7 @@ export class Broker {
         resolve,
         timer: setTimeout(() => {
           s.waiters.delete(waiter);
+          this.armAgentGuardIfIdle(s);
           resolve([]);
         }, this.holdMs),
       };
@@ -171,6 +193,7 @@ export class Broker {
       signal?.addEventListener("abort", () => {
         clearTimeout(waiter.timer);
         s.waiters.delete(waiter);
+        this.armAgentGuardIfIdle(s);
         resolve([]);
       });
     });
@@ -211,15 +234,60 @@ export class Broker {
       .map((t) => ({ text: t.text, answerMarkdown: t.answerMarkdown ?? "" }));
   }
 
-  /** If an agent is parked in `wait`, hand it the freshly available batch. */
+  /** Deliver freshly available work. A parked long-poll (an interactive agent's background
+   *  wait-until, or a spawned worker that happens to be waiting) gets its batch handed over
+   *  directly. Otherwise a spawned worker sits idle between events, so we push a nudge and it
+   *  fetches the batch via wait-until — notifyWorker no-ops for agent-initiated sessions
+   *  (no worker is registered), so a live agent is never replaced. */
   private wake(s: Session): void {
-    if (s.waiters.size === 0) return;
-    const batch = this.collectBatch(s);
-    if (!batch.length) return;
-    const waiter = s.waiters.values().next().value as Waiter;
-    clearTimeout(waiter.timer);
-    s.waiters.delete(waiter);
-    waiter.resolve(batch);
+    if (s.waiters.size > 0) {
+      const batch = this.collectBatch(s);
+      if (!batch.length) return;
+      const waiter = s.waiters.values().next().value as Waiter;
+      clearTimeout(waiter.timer);
+      s.waiters.delete(waiter);
+      waiter.resolve(batch);
+      this.armAgentGuardIfIdle(s); // agent has work now; re-arm liveness for after it's handled
+      return;
+    }
+    // No parked waiter: a spawned worker idles between events — nudge it to fetch the batch.
+    // Only spawned sessions are ever pushed to; an interactive agent owns live context and is
+    // never replaced or nudged (it parks via its own background wait-until).
+    if (s.agentSource === "spawned" && this.hasDeliverable(s)) this.notifyWorker?.(s.sid);
+  }
+
+  /** Whether there is a batch to deliver, without mutating question state (unlike collectBatch). */
+  private hasDeliverable(s: Session): boolean {
+    return this.store.listQuestionsByStatus(s.abspath, "queued").length > 0 || s.pendingControl.length > 0;
+  }
+
+  private disarmAgentGuard(s: Session): void {
+    if (s.agentGuardTimer) {
+      clearTimeout(s.agentGuardTimer);
+      s.agentGuardTimer = null;
+    }
+  }
+
+  /** When an attached agent stops polling, give it a grace window; if it's still idle and
+   *  quiet afterwards, reflect "agent offline" in the viewer. Re-attaching or polling clears
+   *  it (and attach transitions back to waiting-for-review). Never spawns a replacement —
+   *  an agent-initiated agent owns live context that a fresh worker could not reproduce. */
+  private armAgentGuardIfIdle(s: Session): void {
+    // Only interactive agents can go "offline" — a spawned worker idling between broker
+    // pushes is normal, not disconnected.
+    if (s.agentSource !== "agent") return;
+    if (s.waiters.size > 0) return;
+    this.disarmAgentGuard(s);
+    const timer = setTimeout(() => {
+      s.agentGuardTimer = null;
+      if (s.waiters.size > 0) return; // came back
+      if (s.state !== "waiting-for-review") return; // busy (thinking/reworking) or terminal
+      if (Date.now() - (s.agentLastSeen ?? 0) < this.agentGraceMs) return; // recently active
+      this.setState(s, "agent-disconnected");
+      this.log.info({ event: "agent.disconnected", sid: s.sid }, "agent idle past grace; marked offline");
+    }, this.agentGraceMs);
+    (timer as { unref?: () => void }).unref?.();
+    s.agentGuardTimer = timer;
   }
 
   private pendingFeedback(s: Session): PendingFeedback[] {
@@ -393,7 +461,11 @@ export class Broker {
     const s = this.require(sid);
     s.pendingControl.push({ type: "end" });
     this.setState(s, "finalized");
-    this.wake(s);
+    this.disarmAgentGuard(s);
+    this.wake(s); // deliver `end` (resolves a parked waiter, or nudges a live worker)
+    // Close the spawned worker's input stream: its in-flight turn still drains the queued
+    // nudge (so it sees `end` and stops cleanly), then the query completes. No-op for agents.
+    this.stopWorker?.(sid);
     this.log.info({ event: "session.end", sid }, "session ended");
   }
 

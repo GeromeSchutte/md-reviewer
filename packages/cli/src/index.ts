@@ -24,7 +24,7 @@ import {
 } from "@plan-review/broker/daemon";
 import { dataDir } from "@plan-review/broker/paths";
 import { checkForUpdate } from "@plan-review/broker/updater";
-import { attach, baseUrl, createSession, health, postAnswer, reworkDone, waitForEvents } from "./client";
+import { attach, baseUrl, createSession, health, postAnswer, reworkDone, waitForEvents, waitUntilEvents } from "./client";
 
 interface Args {
   positionals: string[];
@@ -473,6 +473,17 @@ async function main(): Promise<void> {
       console.log(JSON.stringify(res));
       return;
     }
+    case "wait-until": {
+      // Like `wait`, but loops internally until there's actually a batch, then
+      // prints it and exits. Run this in the BACKGROUND: the agent ends its turn,
+      // and the harness re-invokes it when this exits with real work — no poll
+      // loop in the conversation. See SKILL.md §3.
+      const sid = positionals[1];
+      if (!sid) throw new Error("usage: plan-review wait-until <sid>");
+      const res = await waitUntilEvents(sid);
+      console.log(JSON.stringify(res));
+      return;
+    }
     case "answer": {
       const sid = positionals[1];
       const questionId = positionals[2];
@@ -504,7 +515,8 @@ async function main(): Promise<void> {
           "Update:  update [--apply] [--json]                   (check for / apply updates)",
           "User:    open <plan.md>",
           "Agent:   attach <sid> --path <plan.md> --source <agent|spawned>",
-          "         wait <sid>",
+          "         wait <sid>                                   (single long-poll; returns [] on timeout)",
+          "         wait-until <sid>                             (loops until work arrives; run in background)",
           "         answer <sid> <questionId> [--error <msg>]   (markdown via stdin)",
           "         rework-done <sid> [--error <msg>]",
         ].join("\n"),

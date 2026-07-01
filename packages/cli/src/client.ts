@@ -50,6 +50,22 @@ export async function waitForEvents(sid: string): Promise<WaitResponse> {
   return WaitResponse.parse(await res.json());
 }
 
+/**
+ * Loop `wait` until a *non-empty* batch arrives, then return it. The re-poll loop
+ * lives here — a plain process, no LLM, no tokens. Because the broker's `wake()`
+ * resolves a parked `wait` the instant real work arrives, this returns within
+ * milliseconds of a question/finalize; the ~4-min hold cycle only spins during
+ * genuine idle. Backgrounding this command (so the agent's turn ends and the
+ * harness re-invokes it on exit) is what frees the interactive session from the
+ * poll loop — see SKILL.md §3.
+ */
+export async function waitUntilEvents(sid: string): Promise<WaitResponse> {
+  for (;;) {
+    const res = await waitForEvents(sid);
+    if (res.events.length > 0) return res;
+  }
+}
+
 export async function postAnswer(
   sid: string,
   questionId: string,

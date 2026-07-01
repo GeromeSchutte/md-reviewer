@@ -226,3 +226,106 @@ describe("doc updates: content-hash gate", () => {
     expect(types(events)).toEqual(["doc"]);
   });
 });
+
+describe("push to a spawned worker (user-initiated, no polling)", () => {
+  function pushBroker() {
+    const notified: string[] = [];
+    const stopped: string[] = [];
+    const broker = new Broker({
+      store: new Store(":memory:"),
+      holdMs: 30,
+      disconnectGraceMs: 10_000,
+      notifyWorker: (sid) => notified.push(sid),
+      stopWorker: (sid) => stopped.push(sid),
+    });
+    return { broker, notified, stopped };
+  }
+
+  it("nudges an idle spawned worker when a question arrives (nobody parked in wait)", async () => {
+    const { broker, notified } = pushBroker();
+    const { sid } = await broker.openSession(await tmpPlan());
+    broker.attach(sid, "spawned");
+    broker.createQuestion(sid, null, "q1"); // no waiter -> push instead of poll
+    expect(notified).toEqual([sid]);
+  });
+
+  it("does NOT nudge for feedback — batching until finalize is preserved", async () => {
+    const { broker, notified } = pushBroker();
+    const { sid } = await broker.openSession(await tmpPlan());
+    broker.attach(sid, "spawned");
+    broker.createFeedback(sid, null, "just a comment");
+    expect(notified).toEqual([]);
+  });
+
+  it("never nudges an interactive agent session (its live context is not replaceable)", async () => {
+    const { broker, notified } = pushBroker();
+    const { sid } = await broker.openSession(await tmpPlan());
+    broker.attach(sid, "agent");
+    broker.createQuestion(sid, null, "q1");
+    broker.finalize(sid, null);
+    expect(notified).toEqual([]);
+  });
+
+  it("hands a parked spawned worker its batch directly, without a nudge", async () => {
+    const { broker, notified } = pushBroker();
+    const { sid } = await broker.openSession(await tmpPlan());
+    broker.attach(sid, "spawned");
+    const waiting = broker.wait(sid); // worker happens to be parked
+    broker.createQuestion(sid, null, "q1");
+    const batch = await waiting;
+    expect(batch.length).toBe(1);
+    expect(notified).toEqual([]); // resolved via the waiter, no push needed
+  });
+
+  it("nudges on finalize and tears the worker down on end", async () => {
+    const { broker, notified, stopped } = pushBroker();
+    const { sid } = await broker.openSession(await tmpPlan());
+    broker.attach(sid, "spawned");
+    broker.finalize(sid, null);
+    expect(notified).toContain(sid);
+    broker.end(sid);
+    expect(stopped).toEqual([sid]);
+  });
+});
+
+describe("agent liveness: interactive agent offline signal", () => {
+  it("marks an idle interactive agent offline after the grace window, and re-attach clears it", async () => {
+    const broker = new Broker({
+      store: new Store(":memory:"),
+      holdMs: 20,
+      agentGraceMs: 40,
+      disconnectGraceMs: 10_000,
+    });
+    const { sid } = await broker.openSession(await tmpPlan());
+    broker.attach(sid, "agent");
+    const { client, events } = capture();
+    broker.subscribe(sid, client);
+    events.length = 0;
+
+    await broker.wait(sid); // times out (20ms) -> arms the agent guard
+    await new Promise((r) => setTimeout(r, 90)); // past agentGraceMs + hold
+    expect(events.some((e) => e.type === "state" && e.state === "agent-disconnected")).toBe(true);
+
+    const state = broker.attach(sid, "agent"); // agent comes back
+    expect(state).toBe("waiting-for-review");
+  });
+
+  it("does not mark a spawned worker offline when it idles between pushes", async () => {
+    const broker = new Broker({
+      store: new Store(":memory:"),
+      holdMs: 20,
+      agentGraceMs: 40,
+      disconnectGraceMs: 10_000,
+      notifyWorker: () => {},
+    });
+    const { sid } = await broker.openSession(await tmpPlan());
+    broker.attach(sid, "spawned");
+    const { client, events } = capture();
+    broker.subscribe(sid, client);
+    events.length = 0;
+
+    await broker.wait(sid); // times out -> spawned workers are NOT guarded
+    await new Promise((r) => setTimeout(r, 90));
+    expect(events.some((e) => e.type === "state" && e.state === "agent-disconnected")).toBe(false);
+  });
+});

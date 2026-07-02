@@ -17,7 +17,7 @@
     "cli": "bun run packages/cli/src/index.ts",
     "update": "bash scripts/update",
     "tauri:build": "bun run --filter '@plan-review/viewer' tauri build",
-    "typecheck": "tsc --build",
+    "typecheck": "tsc --noEmit -p packages/shared/tsconfig.json && tsc --noEmit -p packages/broker/tsconfig.json && tsc --noEmit -p packages/cli/tsconfig.json && tsc --noEmit -p apps/viewer/tsconfig.json",
     "test": "bun test"
   },
   "engines": {

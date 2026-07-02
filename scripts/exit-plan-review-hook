@@ -59,11 +59,34 @@ function dataDir(): string {
 }
 
 /**
- * The plan being exited is, essentially always, the most recently modified file in the
- * plans dir — the agent writes/edits it in the turns right before calling ExitPlanMode.
- * This is fast (one dir stat) and needs no transcript parsing. The only miss is two
- * concurrent plan-mode sessions in separate terminals, which is rare and self-consistent
- * (we open whatever we pick and tell the agent to attach to that same file).
+ * THIS session's plan file, taken from its transcript — the same source ExitPlanMode
+ * uses (the plan-mode system message names the file). The plans dir is shared across
+ * every Claude session, and this workflow routinely has several plan-mode sessions open
+ * at once; picking "newest in the dir" would grab another session's plan and desync the
+ * viewer from the plan ExitPlanMode actually gates on. We pull the last `plans/<slug>.md`
+ * referenced in the transcript and rebuild it under the canonical plans dir, so the hook,
+ * the viewer, and ExitPlanMode all agree on one file. Sub-second even on multi-MB logs.
+ */
+function planFileFromTranscript(transcriptPath: string): string | undefined {
+  try {
+    if (!transcriptPath || !existsSync(transcriptPath)) return undefined;
+    const text = readFileSync(transcriptPath, "utf8");
+    const re = /\.claude\/plans\/([A-Za-z0-9._-]+\.md)/g;
+    let m: RegExpExecArray | null;
+    let slug: string | undefined;
+    while ((m = re.exec(text))) slug = m[1]; // last occurrence = the current plan
+    if (!slug) return undefined;
+    const p = join(plansDir(), slug);
+    return existsSync(p) ? p : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Fallback when the transcript yields nothing (unreadable, or a plan written but not yet
+ * referenced): the most recently modified plan file. Correct for the common single-session
+ * case; the transcript path above is what makes concurrent sessions safe.
  */
 function newestPlanFile(): string | undefined {
   const dir = plansDir();
@@ -106,7 +129,8 @@ function main(): void {
   }
   const sessionId = payload.session_id ?? "";
 
-  const planPath = newestPlanFile();
+  // Prefer this session's plan (from its transcript); newest-in-dir only as a fallback.
+  const planPath = planFileFromTranscript(payload.transcript_path ?? "") ?? newestPlanFile();
   if (!planPath) allow(); // no plan file to review — don't get in the way
 
   const marker = join(dataDir(), "exitplan-hook", createHash("sha1").update(`${sessionId}\0${planPath}`).digest("hex"));

@@ -38,6 +38,20 @@ fn launch_target() -> LaunchTarget {
     }
 }
 
+/// Quit the app so the next `plan-review open` boots the freshly built binary.
+///
+/// A self-update rebuilds the `.app` on disk, but a release Tauri binary embeds its
+/// frontend at build time and this process still holds the `single-instance` lock —
+/// so reopening a plan forwards argv into *this* stale instance and shows the old UI.
+/// Exiting releases the lock; the next launch is a clean primary instance on the new
+/// build. We deliberately do NOT `app.restart()`: `restart` spawns the new process and
+/// then exits this one, racing the single-instance socket teardown — the relaunched
+/// process can forward into the dying old instance and exit too, leaving no window.
+#[tauri::command]
+fn quit_app(app: AppHandle) {
+    app.exit(0);
+}
+
 /// Value following `flag` in an argv vector (e.g. `--session abc` -> `Some("abc")`).
 fn arg_value(argv: &[String], flag: &str) -> Option<String> {
     argv.iter().position(|a| a == flag).and_then(|i| argv.get(i + 1)).cloned()
@@ -154,7 +168,7 @@ pub fn run() {
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![launch_target])
+        .invoke_handler(tauri::generate_handler![launch_target, quit_app])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

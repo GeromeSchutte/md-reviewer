@@ -10,7 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { applyUpdate, checkUpdate, fetchHealthSha } from "../update";
+import { applyUpdate, checkUpdate, fetchHealthSha, inTauri, quitApp } from "../update";
 
 type Phase = "idle" | "applying" | "applied";
 
@@ -160,7 +160,16 @@ export function UpdateControl() {
 
           <DialogFooter>
             {phase === "applied" ? (
-              <Button onClick={() => setOpen(false)}>Close</Button>
+              inTauri() ? (
+                <>
+                  <Button variant="ghost" onClick={() => setOpen(false)}>
+                    Later
+                  </Button>
+                  <Button onClick={() => void quitApp()}>Quit to finish</Button>
+                </>
+              ) : (
+                <Button onClick={() => setOpen(false)}>Close</Button>
+              )
             ) : phase === "applying" ? null : (
               <>
                 <Button variant="ghost" onClick={runCheck} disabled={checking}>
@@ -195,7 +204,9 @@ function Body({
   if (phase === "applied")
     return (
       <Note icon={CircleCheck} tone="success">
-        Updated. <strong>Reopen this plan</strong> to load the new version.
+        Update installed. This window is still the previous build, so{" "}
+        <strong>{inTauri() ? "quit and reopen your plan" : "reopen this plan"}</strong> to load the new
+        version.
       </Note>
     );
 

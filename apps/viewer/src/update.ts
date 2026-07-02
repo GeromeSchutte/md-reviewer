@@ -40,6 +40,23 @@ export async function applyUpdate(): Promise<UpdateApplyResponse> {
   return (await res.json()) as UpdateApplyResponse;
 }
 
+/** True when running inside the Tauri shell (vs a plain browser / dev server). */
+export function inTauri(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+/**
+ * Quit the viewer so the next `plan-review open` boots the freshly built binary. A
+ * release build embeds its frontend at build time and holds the single-instance lock,
+ * so after a self-update reopening a plan forwards into this stale process and shows the
+ * old UI — exiting releases the lock. No-op outside Tauri (browser/dev).
+ */
+export async function quitApp(): Promise<void> {
+  if (!inTauri()) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("quit_app");
+}
+
 /** The broker's checked-out commit, or null while it's restarting / unreachable. */
 export async function fetchHealthSha(): Promise<string | null> {
   if (isMock()) return null;

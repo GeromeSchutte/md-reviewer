@@ -80,7 +80,7 @@ Everything else (`node_modules/`, `apps/viewer/src-tauri/target/`) lives inside 
 
 The tool runs from this clone, so updating means fast-forwarding it to the latest `origin/main` and re-running setup. Three equivalent ways:
 
-- **In the viewer** — click the **update** button in the window header (a dot marks an available update), or choose **Plan Review → Check for Updates…** from the macOS menu bar. The dialog lists what's new; **Update now** fetches, reinstalls, and rebuilds, then the window reconnects to the freshly built broker — reopen the plan to load the new UI.
+- **In the viewer** — click the **update** button in the window header (a dot marks an available update), or choose **Plan Review → Check for Updates…** from the macOS menu bar. The dialog lists what's new; **Update now** fetches, reinstalls, and rebuilds, then the window reconnects to the restarted broker. The rebuild produces a new `.app`, but this window is still the *old* build (a release Tauri binary embeds its frontend and holds the single-instance lock), so use the dialog's **Quit to finish** button and reopen the plan to load the new UI — simply reopening while this instance is alive forwards back into the stale build.
 - **`bun run update`** — the same engine from a terminal.
 - **`plan-review update`** — check only; add `--apply` to apply (`--json` for machine-readable status).
 

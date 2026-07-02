@@ -46,6 +46,18 @@ rename `[Unreleased]` to the new version + date and start a fresh `[Unreleased]`
 - The viewer now shows **"Agent offline"** when an attached interactive agent stops
   polling past a grace window; re-attaching (asking a question / submitting) clears it.
 
+### Fixed
+
+- **Self-update now actually lands the new viewer UI.** A release Tauri build embeds
+  its frontend at build time and the running viewer holds the `single-instance` lock,
+  so after applying an in-app update, reopening a plan forwarded argv back into the
+  stale process — the window kept showing the old UI. The update dialog's "applied"
+  state now offers a **Quit to finish** button (a `quit_app` command → `app.exit(0)`);
+  once quit, the next `plan-review open` boots a clean instance on the freshly built
+  binary. We deliberately don't auto-`restart()`: it races the single-instance socket
+  teardown and can leave no window open. Dialog copy and the README now say
+  quit-and-reopen instead of the misleading "reopen the plan."
+
 ## [0.1.0] - 2026-06-30
 
 Initial release: a desktop tool for reviewing agent-generated markdown plans
